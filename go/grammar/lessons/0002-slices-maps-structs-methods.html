@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 2 课 · 切片、map、struct 与方法</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Go for Java Engineers · Lesson 02</div>
+  <h1>切片、map、struct 与方法</h1>
+  <p class="meta">预计 30 分钟 · 前置：<a href="0001-go-basics-for-java-developers.html">第 1 课 基础语法</a> · 学完你能：用 slice / map / struct 组织数据、给 struct 写方法，并把一个 Java 类翻译成 Go</p>
+
+  <div class="note">
+    <strong>本课目标：</strong>这一课学完，你就具备了写"真正的程序"的数据组织能力。好消息是：<code>slice</code> ≈ <code>ArrayList</code>、<code>map</code> ≈ <code>HashMap</code>、<code>struct</code> ≈ 类的字段部分，直觉大多可以搬过来。真正的新东西只有一个：<strong>struct 是值，赋值即复制</strong>。遇到问题随时回对话里问我。
+  </div>
+
+  <h2 id="slice">1 · 切片 slice ≈ ArrayList</h2>
+  <p>Go 有定长数组 <code>[3]int</code>，但日常几乎不用——主角是<strong>切片</strong>（动态数组）。把 ArrayList 的直觉带过来就行：</p>
+<pre><code>scores := []int{90, 85, 77}   // 字面量创建，≈ new ArrayList&lt;&gt;(List.of(90,85,77))
+scores = append(scores, 60)   // 追加元素
+fmt.Println(len(scores))      // 4
+
+var s2 []int                  // 零值是 nil 切片——可以直接 append，不用先初始化
+s2 = append(s2, 1)
+
+nums := make([]int, 0, 100)   // 预留 100 容量，≈ new ArrayList&lt;&gt;(100)，纯优化</code></pre>
+  <div class="warn">
+    <strong>本课第一条铁律：</strong><code>append</code> 可能扩容并返回新的切片头，所以<em>必须接住返回值</em>：<code>s = append(s, x)</code>。写成单独一行 <code>append(s, x)</code> 是编译错误（evaluated but not used）。这种"函数返回新值"的风格和 Java 的 <code>list.add()</code>（原地修改）相反。
+  </div>
+  <p>切片支持左闭右开的子切片，<strong>子切片和原切片共享底层数组</strong>：</p>
+<pre><code>sub := scores[1:3]   // 下标 1、2，不含 3 —— 和 Java substring 的区间约定一样
+sub[0] = 999         // 注意：scores[1] 也变成 999 了！</code></pre>
+  <p>日常编码记住两层即可：用 <code>append</code> 增、用 <code>s[i]</code> 改、用 <code>len(s)</code> 量；"共享底层"这个坑先有个印象，读到别人代码里出现 <code>s[a:b]</code> 时能想起这回事。</p>
+  <p class="cite">示例查询：<a href="https://gobyexample-cn.github.io/slices">Go by Example · Slices（中文）</a>；深入原理：《Go 语言圣经》§4.2 <a href="https://gopl-zh.github.io/ch4/ch4-2.html">切片</a>。</p>
+
+  <h2 id="map">2 · map ≈ HashMap</h2>
+<pre><code>ages := map[string]int{
+	"张三": 28,                // 字面量创建
+}
+ages["李四"] = 35               // 写入 / 更新
+
+n := ages["王五"]               // 读：键不存在 → 返回 int 零值 0，不报错
+v, ok := ages["张三"]           // comma-ok 惯用法：ok 表示键是否存在
+delete(ages, "李四")            // 删除
+
+stock := make(map[string]int)  // make 创建空 map，≈ new HashMap&lt;&gt;()</code></pre>
+  <p><code>v, ok := m[key]</code> 是你会天天写的惯用法，对应 Java 里 <code>containsKey</code> + <code>get</code> 两步合一步。而 Java 的 <code>getOrDefault(k, 0)</code> 在 Go 里就是直接下标读——缺失键返回零值。</p>
+  <div class="warn">
+    <strong>本课第二条铁律（最容易 panic 的地方）：</strong><code>var m map[string]int</code> 的零值是 <code>nil</code>，<em>读</em> nil map 安全（返回零值），<em>写</em> nil map 直接 panic：<code>assignment to entry in nil map</code>。所以作为 struct 字段或函数局部变量时，先 <code>make</code> 再写。对比记忆：<strong>nil 切片能 append，nil map 不能写</strong>。
+  </div>
+  <div class="warn">
+    <strong>map 遍历顺序是随机的</strong>（官方故意加了随机化，逼你不要依赖顺序）。Java 的 <code>LinkedHashMap</code> 那种"记住插入顺序"的 map，Go 标准库没有——需要顺序时惯用做法是维护一个平行的 key 切片。
+  </div>
+  <p class="cite">示例查询：<a href="https://gobyexample-cn.github.io/maps">Go by Example · Maps（中文）</a>；《Go 语言圣经》§4.3 <a href="https://gopl-zh.github.io/ch4/ch4-3.html">map</a>。</p>
+
+  <h2 id="range">3 · range：统一的遍历写法</h2>
+<pre><code>for i, v := range scores {     // 切片：下标 + 值，≈ Java 的 for (int i = 0; ...)
+	fmt.Println(i, v)
+}
+for _, v := range scores {     // 不要下标，用 _ 丢弃
+	fmt.Println(v)
+}
+for i := range scores {        // 只要下标
+
+}
+
+for name, age := range ages {  // map：键 + 值，≈ entrySet()
+	fmt.Println(name, age)
+}</code></pre>
+  <p>位置固定：第一个是下标/键，第二个是值；不用的那个用 <code>_</code> 丢掉。第 1 课学的 <code>for</code> 三形态加 <code>range</code>，就是 Go 遍历的全部。</p>
+  <p class="cite">示例查询：<a href="https://gobyexample-cn.github.io/range">Go by Example · Range（中文）</a>。</p>
+
+  <h2 id="struct">4 · struct 与值语义</h2>
+  <p>Go 没有 <code>class</code>，数据结构用 <code>struct</code> 定义——就是把 Java 类里"字段"那一半搬出来：</p>
+<pre><code>type Player struct {
+	name string     // 小写：仅包内可见（第 1 课的规则对字段同样适用）
+	hp   int
+}
+
+p1 := Player{name: "勇者", hp: 100}   // 字面量，字段名必须写全
+fmt.Println(p1.name, p1.hp)           // 点号访问，和 Java 一样</code></pre>
+  <p>不初始化也行——struct 的零值是"所有字段取各自零值"。现在，本课真正的新知识来了：</p>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>Player p1 = new Player();
+p1.hp = 100;
+Player p2 = p1;   // p2 和 p1
+                  // 是同一个对象！
+p2.hp = 50;
+// p1.hp == 50</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>p1 := Player{name: "勇者", hp: 100}
+p2 := p1        // 复制整个 struct
+                // 是两个独立的值！
+p2.hp = 50
+fmt.Println(p1.hp)  // 100，p1 没变</code></pre></div>
+  </div>
+  <p><strong>Java 的对象变量天生是引用；Go 的 struct 变量就是值本身，赋值和传参都会整体复制。</strong>这是两种语言最深的一道分水岭，比任何语法差异都重要。好处是你不用想"这个对象会不会被别人改"——默认不会被改；想要共享，下一节的指针就是干这个的。</p>
+  <table>
+    <tr><th>赋值时</th><th>Java</th><th>Go</th></tr>
+    <tr><td><code>ArrayList / HashMap</code></td><td>共享引用</td><td>slice 共享底层数组；map 整个共享（和 Java 一样）</td></tr>
+    <tr><td>对象 / struct</td><td>共享引用</td><td><strong>复制整个值</strong>（要共享得显式用指针 <code>&amp;</code>）</td></tr>
+  </table>
+  <p class="cite">《Go 语言圣经》§4.4 <a href="https://gopl-zh.github.io/ch4/ch4-4.html">结构体</a>；示例查询：<a href="https://gobyexample-cn.github.io/structs">Go by Example · Structs（中文）</a>。</p>
+
+  <h2 id="pointer">5 · 指针速成：两分钟版</h2>
+  <p>Go 的指针就是"显式化的 Java 引用"，只是没有运算：</p>
+<pre><code>p3 := &amp;p1        // 取地址，p3 的类型是 *Player（读作"Player 指针"）
+p3.hp = 80       // 通过指针改字段：自动解引用，等价 (*p3).hp = 80
+fmt.Println(p1.hp)   // 80 —— 这次 p1 变了
+
+&amp;p1        // &amp; 取地址（≈ 拿到 Java 里那个"对象本身"）
+*p3        // * 解引用（顺着地址找到值）—— 日常代码里很少要你手写
+// 没有指针算术：p3+1 这种 C 操作不存在，比 C 安全得多</code></pre>
+  <p>心智模型一句话：<strong>Java 把"引用"做成了默认且唯一；Go 让你选——不写 <code>&amp;</code> 就是复制，写 <code>&amp;</code> 就是共享。</strong>零值 <code>nil</code> 指针 ≈ Java 的 <code>null</code>（解引用 nil 会 panic ≈ NPE，体感完全一样）。</p>
+
+  <h2 id="method">6 · 方法：接收者就是显式的 this</h2>
+  <p>方法就是"带接收者参数的函数"，接收者写在 <code>func</code> 和方法名之间，相当于 Java 的 <code>this</code>，但由你自己命名：</p>
+<pre><code>func (p Player) Name() string {    // 值接收者：拿到的是副本（只读场景）
+	return p.name
+}
+
+func (p *Player) Heal(n int) {     // 指针接收者：通过指针改到原值
+	p.hp += n
+}
+
+func main() {
+	p := Player{name: "勇者", hp: 100}
+	p.Heal(20)                     // 调用方式完全一样，Go 自动取地址
+	fmt.Println(p.Name(), p.hp)    // 勇者 120
+}</code></pre>
+  <p>什么时候用哪种？规则就一条：<strong>方法要修改接收者 → 必须指针接收者</strong>（值接收者拿到的是副本，改了也白改）。社区惯例是：<em>同一个 struct 的方法接收者类型保持一致</em>，而实际项目里绝大多数 struct 都统一用指针接收者。</p>
+  <div class="note">
+    <strong>没有构造函数：</strong>Go 没有 Java 的 <code>new Player()</code> 构造器语法，惯用写法是提供一个 <code>NewXxx()</code> 函数返回 <code>*Xxx</code>。练习里会用到。
+  </div>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/methods/1">A Tour of Go · 方法</a>；示例查询：<a href="https://gobyexample-cn.github.io/methods">Go by Example · Methods（中文）</a>。</p>
+
+  <h2 id="exercise">7 · 动手练习：把 Java 类翻译成 Go</h2>
+  <p><strong>任务：</strong>下面是一个典型的 Java 类（字段 + 三个方法）。把它翻译成 Go：<code>struct</code> + <code>map</code> 字段 + 三个方法 + 一个 <code>main</code> 验证。要求用<strong>指针接收者</strong>，并想一想为什么。写完贴进 <a href="https://go.dev/play/">Go Playground</a> 运行验证。</p>
+  <div class="panel java"><div class="panel-title">待翻译的 Java</div>
+<pre><code>import java.util.HashMap;
+import java.util.Map;
+
+public class Inventory {
+    private Map&lt;String, Integer&gt; stock = new HashMap&lt;&gt;();
+
+    public void add(String item, int n) {
+        Integer cur = stock.get(item);
+        if (cur == null) {
+            stock.put(item, n);
+        } else {
+            stock.put(item, cur + n);
+        }
+    }
+
+    public int count(String item) {
+        Integer cur = stock.get(item);
+        return cur == null ? 0 : cur;
+    }
+
+    public int total() {
+        int sum = 0;
+        for (int n : stock.values()) {
+            sum += n;
+        }
+        return sum;
+    }
+}
+
+// 验证：add("苹果",3); add("苹果",2); add("香蕉",5);
+//      期望 count("苹果")==5, total()==10</code></pre></div>
+  <p>提示：Go 的 <code>Add</code> 会比 Java 版短得多——想想 nil map 铁律的另一面：缺失键读出来是什么？</p>
+  <details>
+    <summary>查看参考答案（先自己写！）</summary>
+<pre><code>package main
+
+import "fmt"
+
+type Inventory struct {
+	stock map[string]int
+}
+
+func NewInventory() *Inventory {          // 构造器惯例
+	return &amp;Inventory{stock: make(map[string]int)}  // 字段必须 make，否则写 nil map panic
+}
+
+func (inv *Inventory) Add(item string, n int) {
+	inv.stock[item] += n                  // 缺失键读到 0，+= 直接成立，不用判 null
+}
+
+func (inv *Inventory) Count(item string) int {
+	return inv.stock[item]                // 缺失返回 0，天生就是 getOrDefault
+}
+
+func (inv *Inventory) Total() int {
+	sum := 0
+	for _, n := range inv.stock {         // 只用值，键用 _ 丢弃
+		sum += n
+	}
+	return sum
+}
+
+func main() {
+	inv := NewInventory()
+	inv.Add("苹果", 3)
+	inv.Add("苹果", 2)
+	inv.Add("香蕉", 5)
+	fmt.Println(inv.Count("苹果"), inv.Total())  // 5 10
+}</code></pre>
+    <p><strong>自评清单：</strong>① <code>NewInventory</code> 里对字段做了 <code>make</code>？② 三个方法都用指针接收者（<code>Total</code> 只读，值接收者也行——但惯例是保持统一）？③ <code>Add</code> 和 <code>Count</code> 里没有任何 <code>== null</code> 判断？④ <code>range</code> 时用 <code>_</code> 丢弃了键？⑤ 方法名大写（<code>Add</code> 而不是 <code>add</code>），保持导出惯例？</p>
+  </details>
+
+  <h2 id="quiz">8 · 检索测验</h2>
+  <p>前 4 题考本课，后 2 题是第 1 课的间隔复习——都凭记忆作答：</p>
+  <div id="quiz"></div>
+
+  <h2>9 · 闭卷回忆</h2>
+  <p>60 秒，不看上文回答三个问题，再翻到下面核对：</p>
+  <ol>
+    <li><code>append</code> 为什么必须重新赋值给切片变量？</li>
+    <li>读 nil map 里缺失的键会发生什么？往 nil map 写呢？nil 切片能 <code>append</code> 吗？</li>
+    <li><code>p2 := p1</code>（两个都是 struct 变量）之后改 <code>p2</code> 的字段，<code>p1</code> 变吗？想共享怎么做？</li>
+  </ol>
+  <details>
+    <summary>核对答案</summary>
+    <ol>
+      <li>扩容时底层会换新数组，append 返回新切片头；不接住就可能丢数据，且单独调用是编译错误。</li>
+      <li>读：安全，返回值类型零值；写：panic；nil 切片可以直接 append（三者对比着记）。</li>
+      <li>不变——struct 赋值是整体复制；想要共享用 <code>&amp;</code> 取指针（或方法用指针接收者）。</li>
+    </ol>
+  </details>
+
+  <h2>10 · 主推资源与下一步</h2>
+  <p><strong>今天的配套任务（约 20 分钟）：</strong>把 <a href="https://tour.go-zh.org/moretypes/1">A Tour of Go「复合数据类型」章节</a>（切片 → map → struct）过完，代码逐页跑一遍；再翻一遍 <a href="https://gobyexample-cn.github.io/slices">Go by Example 中文版的 Slices / Maps / Structs / Methods</a> 四篇。</p>
+  <p>配套材料：<a href="../reference/go-composite-types-vs-java.html">速查表 · 复合类型对照 Java</a>（可打印）。下节课：<strong>错误处理</strong>——<code>if err != nil</code> 的完整世界观、<code>defer</code> 关资源、什么时候才轮到 <code>panic</code>。这是 Go 面试和 code review 的必考区，也是 Java 惯性最重的地方（你会很想 try-catch）。课里有任何疑问，随时在对话里问我。</p>
+
+  <nav class="lesson-nav">
+    <a href="0001-go-basics-for-java-developers.html">← 第 1 课 · 基础语法</a>
+    <a href="0003-error-handling.html">第 3 课 · 错误处理 →</a>
+  </nav>
+</main>
+
+<script src="../assets/quiz.js"></script>
+<script>
+renderQuiz("#quiz", [
+  {
+    q: "向切片 <code>scores</code> 追加一个元素 4，正确的写法是？",
+    options: [
+      "<code>append(scores, 4)</code>（单独一行）",
+      "<code>scores = append(scores, 4)</code>",
+      "<code>scores.add(4)</code>",
+      "<code>scores.push(4)</code>"
+    ],
+    answer: 1,
+    explain: "<code>append</code> 扩容时可能搬到底层数组，所以返回新切片、<strong>必须接住</strong>。单独一行调用是编译错误（evaluated but not used）——和 Java <code>list.add()</code> 的原地修改相反。（<a href='https://gobyexample-cn.github.io/slices'>Go by Example · Slices</a>）"
+  },
+  {
+    q: "<code>ages := map[string]int{}</code>，执行 <code>v := ages[\"不存在\"]</code>，<code>v</code> 是？",
+    options: [
+      "<code>nil</code>",
+      "<code>panic</code>",
+      "<code>0</code>",
+      "编译错误"
+    ],
+    answer: 2,
+    explain: "读 map 的缺失键<strong>永远安全</strong>，返回值类型的零值（这里 int 是 0）。需要区分\"键不存在\"时用 comma-ok：<code>v, ok := ages[k]</code>。（<a href='https://gobyexample-cn.github.io/maps'>Go by Example · Maps</a>）"
+  },
+  {
+    q: "<code>var m map[string]int</code> 声明后直接 <code>m[\"a\"] = 1</code>，结果是？",
+    options: [
+      "运行时 panic",
+      "静默写入成功",
+      "编译错误",
+      "自动初始化为空 map"
+    ],
+    answer: 0,
+    explain: "map 的零值是 <code>nil</code>：<strong>读</strong> nil map 安全（返回零值），<strong>写</strong>直接 panic。所以字段/局部 map 先 <code>make</code>。对比记：nil <strong>切片</strong>反而可以直接 append。（本课铁律二）"
+  },
+  {
+    q: "方法需要修改 struct 的字段，接收者必须写成？",
+    options: [
+      "值接收者 <code>(p Player)</code>",
+      "两种完全等价",
+      "改用全局变量",
+      "指针接收者 <code>(p *Player)</code>"
+    ],
+    answer: 3,
+    explain: "值接收者拿到的是<strong>副本</strong>，改字段改在副本上，方法返回后就丢了。指针接收者通过指针改到原值。惯例：同一 struct 的方法接收者类型保持统一（一般都用指针）。（本课第 6 节）"
+  },
+  {
+    q: "【复习第 1 课】<code>var i int = 42</code> 之后执行 <code>var f float64 = i</code>，会？",
+    options: [
+      "成功，f 为 42.0",
+      "编译失败，须写 float64(i)",
+      "成功，f 为 42",
+      "运行时类型异常"
+    ],
+    answer: 1,
+    explain: "间隔复习：Go <strong>没有隐式类型转换</strong>，int → float64 必须显式 <code>float64(i)</code>。和 Java 的自动加宽相反，这条要保持警觉。"
+  },
+  {
+    q: "【复习第 1 课】Go 控制其他包能否调用某个函数的机制是？",
+    options: [
+      "public / private 关键字",
+      "默认全部公开",
+      "函数名首字母大小写",
+      "export 关键字"
+    ],
+    answer: 2,
+    explain: "间隔复习：首字母<strong>大写导出</strong>（≈ public）、<strong>小写仅包内可见</strong>（≈ 包私有）。本课 struct 的字段同理——<code>Inventory.stock</code> 小写就是包内私有。"
+  }
+]);
+</script>
+</body>
+</html>

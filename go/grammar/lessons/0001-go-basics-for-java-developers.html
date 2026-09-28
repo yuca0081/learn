@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 1 课 · 从 Java 到 Go：基础语法</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Go for Java Engineers · Lesson 01</div>
+  <h1>从 Java 到 Go：基础语法</h1>
+  <p class="meta">预计 25–35 分钟 · 所有概念用 Java 对照 · 学完你能：写出变量、常量、函数和三种控制流结构，并把一段 Java 方法翻译成等价的 Go 代码</p>
+
+  <div class="note">
+    <strong>本课目标：</strong>不求全，只求上手写代码。读完请完成 <a href="#exercise">翻译练习</a> 和 <a href="#quiz">检索测验</a>——做题比阅读更能让你记住。有看不懂的地方，随时回到对话里问我（你的 agent 老师）。
+  </div>
+
+  <h2 id="s1">1 · 五个最重要的心智转变</h2>
+  <p>你已经会编程了，学 Go 的主要工作量不是学概念，而是<em>搬家</em>——把 Java 的习惯映射到 Go 的规则上。先记住这五条，能避开 80% 的编译报错：</p>
+  <ol>
+    <li><strong>没有 <code>class</code></strong>。数据放 <code>struct</code>（下节课讲），方法挂在 struct 上；组织代码的单位是<em>包（package）</em>，文件不必一一对应一个公共类。</li>
+    <li><strong>没有 <code>public / private</code> 关键字</strong>。标识符<em>首字母大写 = 导出</em>（相当于 public），<em>小写 = 仅包内可见</em>。注意"标识符"指<strong>代码里名字的首字母</strong>——函数名、类型名、变量/常量名、struct 字段名，和文件名无关（文件名惯例全小写，随意起）。所以标准库里是 <code>fmt.Println</code>（函数名大写，可被你调用）。</li>
+    <li><strong>分号省略，括号省略</strong>。<code>if / for / switch</code> 的条件不写括号；行尾不写分号——编译器按行自动插入，所以 <code>{</code> 必须和语句在同一行，不能另起一行（Java 允许的 Allman 风格在 Go 里直接编译错误）。团队格式统一交给 <code>gofmt</code>，没有 Google Style vs 其他风格之争。</li>
+    <li><strong>错误是值，不是异常</strong>。函数失败时返回一个 <code>error</code>，由调用方 <code>if err != nil</code> 处理（错误处理课详讲）。<code>panic</code> ≈ Java 的 <code>Error</code>，只留给真正不该发生的情况。</li>
+    <li><strong>编译即终点</strong>。<code>go build</code> 直接产出单个静态二进制文件——没有 JVM、没有 classpath、没有 jar，扔到服务器就能跑。这也是后端团队喜欢 Go 的原因之一。</li>
+  </ol>
+  <p class="cite">对照阅读：《Go for Java Programmers》第 1 章 <a href="https://www.oreilly.com/library/view/go-for-java/9781484271995">A Brief Look at Go vs. Java</a>（O'Reilly）。</p>
+
+  <h2 id="s2">2 · Hello, World</h2>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello, 世界");
+    }
+}</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello, 世界")
+}</code></pre></div>
+  </div>
+  <ul>
+    <li><code>package main</code> + <code>func main()</code> 是程序入口，对应你的 <code>public static void main</code>。<code>main</code> 包 <code>go run</code> 可执行，<code>go build</code> 出二进制。</li>
+    <li><code>import "fmt"</code> ≈ Java 的 import，但没有分号、没有通配符 <code>.*</code>；<code>fmt</code> 是格式化 I/O 标准库（类比 <code>System.out</code> 所在的那套）。</li>
+    <li><strong>import 了不用的包 = 编译错误</strong>（不是 warning）。IDE 会自动帮你清理。</li>
+  </ul>
+  <p class="cite">实操：在 <a href="https://go.dev/play/">Go Playground</a> 里跑一遍，不用装任何环境。官方教程：<a href="https://tour.go-zh.org/basics/1">A Tour of Go · 包、变量和函数</a>。</p>
+
+  <h3>包与文件组织：文件名和 Java 的什么对应？</h3>
+  <p>答：<strong>什么都不对应——Go 没有"文件名 = 类名"这条规则</strong>。Java 规定一个公共类一个文件（<code>Player.java</code> 里必须是 <code>public class Player</code>）；Go 的 <code>player.go</code> 只是给你自己看的组织单位，里面放几个类型、几个函数都随意（惯例蛇形命名，如 <code>http_server.go</code>；工具链唯一在意的名字是 <code>_test.go</code> 后缀 = 测试文件）。真正的对应关系是<strong>包 ≈ 目录</strong>，可见性按包算而不是按文件算：</p>
+  <table>
+    <tr><th>组织规则</th><th>Java</th><th>Go</th></tr>
+    <tr><td>包与目录</td><td>包路径必须匹配目录</td><td>同目录所有 <code>.go</code> 文件第一行必须声明<strong>同一个</strong> <code>package</code>；目录名 ≈ 包名（惯例）</td></tr>
+    <tr><td>文件名</td><td>文件名 = 公共类名</td><td><strong>无约束</strong>，一个文件可放任意多个类型 / 函数</td></tr>
+    <tr><td>import 的对象</td><td>导入<strong>类</strong>：<code>import com.x.user.Player;</code></td><td>导入<strong>包</strong>：<code>import "myapp/user"</code>，用 <code>user.Xxx</code> 访问其导出成员</td></tr>
+    <tr><td>可见性最小粒度</td><td>类（<code>private</code>）</td><td><strong>包</strong>（小写标识符对同包所有文件可见）</td></tr>
+    <tr><td>包内可见</td><td>默认（package-private）</td><td>首字母小写</td></tr>
+    <tr><td>全局可见</td><td><code>public</code></td><td>首字母大写</td></tr>
+  </table>
+<pre><code>myapp/
+  go.mod           // 模块定义（≈ pom.xml，配置环境那节课讲）
+  user/
+    user.go        // package user ┐
+    repository.go  // package user ├ 同一个包、同一个命名空间，
+    service.go     // package user ┘ 小写成员在这三个文件间互通
+  main.go          // package main</code></pre>
+  <p>推论：Java 的 <code>private</code>（类内私有）在 Go 里没有对应——最小可见粒度就是包。所以 Go 社区的包通常切得比 Java 的类小得多，一个包往往只负责一件事。</p>
+
+  <h2 id="s3">3 · 变量与零值</h2>
+  <p>Java 声明局部变量必须立刻初始化；Go 的变量<em>声明即有零值</em>（不是 null、不是未定义）：</p>
+<pre><code>var x int = 10      // 完整形式：var 名字 类型 = 值
+var y = 10          // 类型推断（编译器知道这是 int）
+var a, b = 1, "hi"  // 一行声明多个
+
+func main() {
+	z := 10        // 短声明：省略 var 和类型，只能用在函数内
+	var p float64  // 声明不初始化 → 零值 0.0
+	fmt.Println(z, p)
+}</code></pre>
+  <table>
+    <tr><th>类型</th><th>零值</th><th>Java 对照</th></tr>
+    <tr><td><code>bool</code></td><td><code>false</code></td><td>只能自己初始化</td></tr>
+    <tr><td>数值（<code>int</code> / <code>float64</code>…）</td><td><code>0</code></td><td>—</td></tr>
+    <tr><td><code>string</code></td><td><code>""</code> 空串</td><td>Java 的 <code>String s;</code> 是 <code>null</code>，Go 不会是 nil</td></tr>
+    <tr><td>指针 / 切片 / map / 接口 / 函数</td><td><code>nil</code></td><td>≈ Java 的 <code>null</code>，但只属于这些类型</td></tr>
+  </table>
+  <div class="warn">
+    <strong>两个编译期铁律：</strong>
+    ① 声明了<em>没用过</em>的变量是编译错误（Java 只是 warning）—— <code>declared and not used: z</code>；
+    ② 不想要某个返回值时用 <code>_</code> 丢弃（后面函数会用到）。这两条都是为了让编译器替你抓死代码。
+  </div>
+  <p>常量用 <code>const</code>，语义同 Java 的 <code>final</code>：</p>
+<pre><code>const Pi = 3.14159
+const StatusOK = 200</code></pre>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/basics/4">A Tour of Go · 变量</a>、<a href="https://tour.go-zh.org/basics/15">常量</a>；《Go 语言圣经》§2.4 <a href="https://gopl-zh.github.io/ch2/ch2-4.html">赋值与变量</a>。</p>
+
+  <h2 id="s4">4 · 基本类型与显式转换</h2>
+  <p>类型大家族你一眼就认识，重点记三个不同：</p>
+  <table>
+    <tr><th>Java</th><th>Go</th><th>注意</th></tr>
+    <tr><td><code>int</code> / <code>long</code></td><td><code>int</code> / <code>int64</code></td><td>Go 的 <code>int</code> 是平台字长（如今普遍 64 位）；还有 <code>int8/16/32/64</code>、<code>uint</code> 系列，业务代码默认 <code>int</code></td></tr>
+    <tr><td><code>double</code></td><td><code>float64</code></td><td>默认选 <code>float64</code></td></tr>
+    <tr><td><code>char</code></td><td><code>rune</code></td><td><code>rune</code> = <code>int32</code> 的别名，存一个 Unicode 码点；<code>byte</code> = <code>uint8</code> 的别名</td></tr>
+    <tr><td><code>String</code></td><td><code>string</code></td><td>不可变、UTF-8 编码（Java 是 UTF-16，这是重要差异，后面讲 range 时会撞上）</td></tr>
+    <tr><td><code>Object</code></td><td><code>any</code>（即空接口 <code>interface{}</code>）</td><td>接口课详讲</td></tr>
+  </table>
+  <p><strong>Go 没有隐式类型转换</strong>——哪怕 int → float64 这种“绝对安全”的也不行：</p>
+<pre><code>i := 42
+var f float64 = i      // ❌ 编译错误：cannot use i as float64
+var f float64 = float64(i)  // ✅ 必须显式写
+n := 3
+ratio := float64(i) / float64(n)  // 表达式里也各转各的</code></pre>
+  <p>这条规则和 Java 的自动加宽（<code>int</code> 隐式变 <code>double</code>）相反，是你前两周最容易踩的坑。</p>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/basics/13">A Tour of Go · 基本类型</a>、<a href="https://tour.go-zh.org/basics/14">类型转换</a>。</p>
+
+  <h2 id="s5">5 · 函数与多返回值</h2>
+<pre><code>func add(a, b int) int {   // 参数类型简写：a, b int
+	return a + b
+}
+
+func divmod(a, b int) (int, int) {   // 返回两个 int
+	return a / b, a % b
+}
+
+func main() {
+	q, r := divmod(17, 5)   // q=3, r=2
+	_, r2 := divmod(17, 5)  // _ 丢弃商，只要余数
+	fmt.Println(add(1, 2), q, r2)
+}</code></pre>
+  <p><strong>多返回值是 Go 最颠覆 Java 的一个特性。</strong>Java 里返回“两个值”你得造一个包装类、或用数组下标猜含义、或用 out 参数；Go 直接返回元组，而且它马上会和错误处理擦出火花——<code>result, err := doSomething()</code> 就靠它：</p>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>static int[] divmod(int a, int b) {
+    return new int[]{a / b, a % b};
+}
+int[] r = divmod(17, 5);
+// r[0] 是啥？读注释才知道</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>q, r := divmod(17, 5)
+// 名字自解释
+
+// 命名返回值（小函数可用）：
+func divmod(a, b int) (q, r int) {
+	q = a / b
+	r = a % b
+	return  // 裸返回
+}</code></pre></div>
+  </div>
+  <p>另外记住 <code>_</code>（空标识符）：任何不想接收的值都丢给它，编译器就不报“未使用”了。</p>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/basics/6">A Tour of Go · 函数</a>、<a href="https://tour.go-zh.org/basics/8">多值返回</a>。</p>
+
+  <h2 id="s6">6 · 控制流：if / for / switch</h2>
+  <h3>if：没有括号，可以带初始化语句</h3>
+<pre><code>if score >= 90 {
+	fmt.Println("优")
+} else if score >= 60 {
+	fmt.Println("及格")
+} else {
+	fmt.Println("不及格")
+}
+
+if n := x * 2; n > 100 {   // 带初始化语句
+	fmt.Println(n)         // n 只在 if/else 块内可见
+}
+// fmt.Println(n)  ← 这里用 n 是编译错误</code></pre>
+  <p><code>if n := ...; n > 100</code> 这种“初始化 + 条件”写法你会天天见到（错误处理的标准姿势 <code>if err := f(); err != nil</code> 就是它），它的作用是把临时变量的作用域收窄到 if 里。</p>
+
+  <h3>for：唯一的关键字</h3>
+<pre><code>for i := 0; i < 5; i++ { }  // 三段式 = Java 的 for
+for i < 5 { }               // 只写条件 = Java 的 while
+for {                       // 无限循环，break 跳出
+	break
+}</code></pre>
+  <p>没有 <code>while</code>、没有 <code>do-while</code>。三种 for 覆盖了它们的所有场景；遍历集合的第四种形态 <code>for ... range</code> 等学了切片和 map 再讲。</p>
+
+  <h3>switch：默认自动 break</h3>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>switch (day) {
+    case "周六":
+    case "周日":
+        System.out.println("休息");
+        break;          // 忘写 break → fall through bug
+    default:
+        System.out.println("上班");
+}</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>switch day {
+case "周六", "周日":      // 多值 case 用逗号
+	fmt.Println("休息")   // 默认 break，不会穿透
+default:
+	fmt.Println("上班")
+}</code></pre></div>
+  </div>
+  <p>Java 的 switch 灾星“忘写 break”在 Go 里不存在：默认就是 break，想穿透反而要显式写 <code>fallthrough</code>。另外 Go 的 switch 没有括号，case 值还可以是任意表达式（不必是常量）。</p>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/flowcontrol/1">A Tour of Go · 流程控制</a>（if / for / switch 三节都过一遍）。</p>
+
+  <h2 id="exercise">7 · 动手练习：把 Java 翻译成 Go</h2>
+  <p><strong>任务：</strong>把下面的 Java 代码翻译成 Go。<em>不用任何标准库函数</em>，只用 <code>if</code> 和多返回值——正好覆盖本课所有要点：</p>
+  <div class="panel java"><div class="panel-title">待翻译的 Java</div>
+<pre><code>public class Util {
+    // 返回三个数中的最小值和最大值
+    public static int[] minMax(int a, int b, int c) {
+        int min = a, max = a;
+        if (b < min) min = b;
+        if (b > max) max = b;
+        if (c < min) min = c;
+        if (c > max) max = c;
+        return new int[]{min, max};
+    }
+
+    public static void main(String[] args) {
+        int[] r = minMax(7, 2, 9);
+        System.out.println(r[0] + " " + r[1]);  // 期望输出: 2 9
+    }
+}</code></pre></div>
+  <p>先自己写（白纸或编辑器都行，写不出来再翻上面的章节），然后把代码贴进 <a href="https://go.dev/play/">Go Playground</a> 点 Run 验证输出是不是 <code>2 9</code>。写完再对照答案：</p>
+  <details>
+    <summary>查看参考答案（先自己写！）</summary>
+<pre><code>package main
+
+import "fmt"
+
+func minMax(a, b, c int) (int, int) {
+	min := a
+	max := a
+	if b < min {
+		min = b
+	}
+	if b > max {
+		max = b
+	}
+	if c < min {
+		min = c
+	}
+	if c > max {
+		max = c
+	}
+	return min, max
+}
+
+func main() {
+	lo, hi := minMax(7, 2, 9)
+	fmt.Println(lo, hi)  // 2 9
+}</code></pre>
+    <p>自评清单：① 参数类型用了简写 <code>a, b, c int</code>？② 返回了两个值而不是数组？③ if 条件没写括号？④ 调用处用了 <code>:=</code> 接收两个值？⑤ 没有多余的 import？——五条全中就是合格的第一份 Go 代码。</p>
+  </details>
+
+  <h2 id="quiz">8 · 检索测验</h2>
+  <p>合上资料，直接凭记忆作答——答错没有关系，错题的解析才是记忆增强剂：</p>
+  <div id="quiz"></div>
+
+  <h2>9 · 闭卷回忆</h2>
+  <p>最后 60 秒，不看上文，在脑子里（或纸上）回答三个问题，然后滚动到本页底部核对：</p>
+  <ol>
+    <li>Go 声明局部变量的两种写法分别是什么？各有什么限制？</li>
+    <li><code>string</code> 的零值是什么？指针的零值是什么？</li>
+    <li><code>for</code> 的三种形态分别对应 Java 的什么？</li>
+  </ol>
+  <details>
+    <summary>核对答案</summary>
+    <ol>
+      <li><code>var x = 10</code>（包级、函数内都行）和 <code>x := 10</code>（只能在函数内）。</li>
+      <li><code>""</code> 空串；<code>nil</code>。</li>
+      <li>三段式 ↔ Java <code>for</code>；条件式 ↔ Java <code>while</code>；<code>for{}</code> ↔ <code>while(true)</code>。</li>
+    </ol>
+  </details>
+
+  <h2>10 · 主推资源与下一步</h2>
+  <p><strong>今天的配套任务（约 20 分钟）：</strong>把 <a href="https://tour.go-zh.org/">A Tour of Go 中文版</a> 的「基础」和「流程控制」两部分在浏览器里过完——每页代码都能直接改、直接跑，用它验证你今天的手感。</p>
+  <p>配套材料：<a href="../reference/go-basics-vs-java.html">速查表 · Go 基础语法对照 Java</a>（可打印贴墙）。下节课：<strong>复合数据类型</strong>——切片 slice、map 和 struct（Go 的“类”），学完你就能组织真正的数据结构了。想深入某个点，或对今天的课有疑问，直接在对话里问我。</p>
+
+  <nav class="lesson-nav">
+    <span>第 1 课 · 基础语法</span>
+    <a href="../reference/go-basics-vs-java.html">速查表 →</a>
+  </nav>
+</main>
+
+<script src="../assets/quiz.js"></script>
+<script>
+renderQuiz("#quiz", [
+  {
+    q: "在函数内声明一个新变量，最惯用的写法是？",
+    options: [
+      "<code>var count int = 10</code>",
+      "<code>count := 10</code>",
+      "<code>int count = 10</code>",
+      "<code>let count = 10</code>"
+    ],
+    answer: 1,
+    explain: "<code>count := 10</code> 是短声明，只能在<strong>函数内</strong>使用，是最惯用的方式；<code>var</code> 完整形式多用于包级声明或需要显式类型时。C 风格和 <code>let</code> 在 Go 里都不存在。（<a href='https://tour.go-zh.org/basics/10'>Tour · 短变量声明</a>）"
+  },
+  {
+    q: "<code>var s string</code> 声明后直接使用，<code>s</code> 的值是？",
+    options: [
+      "<code>\"\"</code>（空串）",
+      "<code>nil</code>",
+      "<code>undefined</code>",
+      "<code>null</code>"
+    ],
+    answer: 0,
+    explain: "Go 变量声明即有<strong>零值</strong>：<code>string</code> 的零值是空串 <code>\"\"</code>，永远不会是 nil。<code>nil</code> 只属于指针、切片、map、接口这类\"引用型\"类型。（<a href='https://tour.go-zh.org/basics/12'>Tour · 零值</a>）"
+  },
+  {
+    q: "以下哪一行会<strong>编译失败</code>？",
+    options: [
+      "<code>f := float64(42)</code>",
+      "<code>i := 42; f := float64(i)</code>",
+      "<code>var i int = 42; var f float64 = i</code>",
+      "<code>u := uint(7)</code>"
+    ],
+    answer: 2,
+    explain: "Go <strong>没有隐式类型转换</strong>，int 赋给 float64 必须写成 <code>float64(i)</code>——这与 Java 的自动加宽相反，是最常见的早期报错。（<a href='https://tour.go-zh.org/basics/13'>Tour · 类型转换</a>）"
+  },
+  {
+    q: "Go 的 <code>switch</code> 执行完一个 <code>case</code> 后会？",
+    options: [
+      "自动跳出整个 switch",
+      "自动继续下一个 case",
+      "需要写 break 才能跳出",
+      "需要写 continue 才能跳出"
+    ],
+    answer: 0,
+    explain: "默认自动 break，Java 那个\"忘写 break 导致穿透\"的经典 bug 在 Go 不存在；想穿透反而要显式写 <code>fallthrough</code>。（<a href='https://tour.go-zh.org/flowcontrol/9'>Tour · switch</a>）"
+  },
+  {
+    q: "循环写法 <code>for { ... }</code> 是什么？",
+    options: [
+      "无限循环",
+      "编译错误",
+      "遍历集合",
+      "do-while 循环"
+    ],
+    answer: 0,
+    explain: "省略全部三段就是无限循环，用 <code>break</code> 跳出。Go 只有 <code>for</code> 一个循环关键字，没有 while / do-while。（<a href='https://tour.go-zh.org/flowcontrol/4'>Tour · for</a>）"
+  },
+  {
+    q: "同包里定义了 <code>PrintUser</code> 和 <code>printUser</code>，在<strong>另一个包</strong>里谁可以被调用？",
+    options: [
+      "仅 PrintUser",
+      "仅 printUser",
+      "两者都可以",
+      "两者都不行"
+    ],
+    answer: 0,
+    explain: "Go 用<strong>首字母大小写</strong>控制可见性：大写导出（≈ public），小写仅包内可见（≈ 包私有）。没有 public/private 关键字。（<a href='https://tour.go-zh.org/basics/3'>Tour · 导出名称</a>）"
+  }
+]);
+</script>
+</body>
+</html>

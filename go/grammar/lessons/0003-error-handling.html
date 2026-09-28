@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 3 课 · 错误处理：error、defer 与 panic</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Go for Java Engineers · Lesson 03</div>
+  <h1>错误处理：error、defer 与 panic</h1>
+  <p class="meta">预计 30 分钟 · 前置：<a href="0002-slices-maps-structs-methods.html">第 2 课 复合类型</a> · 学完你能：读懂并写出惯用的 <code>if err != nil</code>、错误链包装、<code>defer</code> 资源清理，知道什么时候才轮到 <code>panic</code></p>
+
+  <div class="note">
+    <strong>本课目标：</strong>这是你从 Java 搬家时<strong>惯性最重</strong>的一站——你会本能地想找 <code>try-catch</code>。Go 没有（业务代码里没有），它的答案是：<strong>错误就是一个普通的返回值</strong>。本课学完，你写 Go 的手感就基本齐了。卡住随时回对话里问我。
+  </div>
+
+  <h2 id="errvalue">1 · error 是值：第一次见面</h2>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>int port = parsePort("8080");
+// 失败 = 抛异常，控制流
+// 隐形跳走（隐形 goto）
+// 签名里看不见（throws 可省）
+// 不 catch 也可能编译通过</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>port, err := parsePort("8080")
+if err != nil {
+	return 0, err     // 失败 = 一个
+}                     // 普通的返回值
+fmt.Println(port)</code></pre></div>
+  </div>
+  <p>三条惯例，全社区的 Go 代码都长这样：</p>
+  <ol>
+    <li>可能失败的函数，<strong>最后一个返回值是 <code>error</code></strong>；<code>err == nil</code> 表示成功。</li>
+    <li>失败时其他返回值返回<strong>零值</strong>（<code>return 0, err</code>），调用方拿到 err 就不会用前面的值。</li>
+    <li>拿到 err 要么处理、要么往上传，<strong>不能假装没看见</strong>（写成 <code>_</code> 丢弃也得是显式的）。</li>
+  </ol>
+  <p>为什么这么设计？Go 官方的立场写在 Rob Pike 的文章 <a href="https://blog.go-zh.org/errors-are-values">Errors are values</a> 里：错误就是值，可以像普通值一样传递、检查、包装、组合。代价是 <code>if err != nil</code> 满天飞（Java 里那些隐形的异常跳转，在 Go 里全部平铺在你眼前）；收益是<strong>看函数签名就知道它会怎么失败，看代码就知道错误去哪了</strong>——没有暗处的控制流。这其实是 Java 受检异常（checked exception）的初衷，Go 只是用"值 + 惯例"来实现，不靠编译器强制。</p>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/basics/15">A Tour of Go · 错误</a>（basics 尾部）；《Go 语言圣经》§5.4 <a href="https://gopl-zh.github.io/ch5/ch5-4.html">错误</a>。</p>
+
+  <h2 id="wrap">2 · 造错误与错误链：%w、errors.Is / errors.As</h2>
+<pre><code>import "errors"
+import "fmt"
+
+// 造一个新错误（哨兵错误：定义成包级 var，调用方好判断）
+var ErrNotFound = errors.New("记录不存在")
+
+// 包装底层错误并加上下文：%w 是关键字占位符，会把底层错误"串"进链里
+_, err := os.ReadFile("config.yaml")
+if err != nil {
+	return fmt.Errorf("读配置失败: %w", err)
+}</code></pre>
+  <p>错误一路往上 <code>return</code> 的过程中，每层用 <code>%w</code> 加一点上下文，最后在顶层得到一条链——Java 里对应异常的 <code>caused by</code>。检查链上的错误用两个函数，直接对应你的直觉：</p>
+  <table>
+    <tr><th>Go</th><th>Java 对照</th><th>用途</th></tr>
+    <tr><td><code>errors.Is(err, ErrNotFound)</code></td><td><code>e == MyCodes.NOT_FOUND</code> / 哨兵比较</td><td>链上是不是<strong>这个</strong>错误（值）</td></tr>
+    <tr><td><code>errors.As(err, &amp;myErr)</code></td><td><code>catch (MyException e)</code> / <code>instanceof</code></td><td>链上有没有<strong>这种类型</strong>的错误，有则取出来</td></tr>
+  </table>
+<pre><code>if errors.Is(err, ErrNotFound) {
+	http.NotFound(w, r)      // 链上某处是"记录不存在"
+	return
+}</code></pre>
+  <div class="warn">
+    <strong>记住用 <code>%w</code> 而不是 <code>%v</code>：</strong><code>%v</code> 只是把错误信息拼进字符串，<em>链断了</em>，上层 <code>errors.Is</code> 就认不出来了。想保留"是什么错误"的判断能力，一律 <code>%w</code>。
+  </div>
+  <p class="cite">示例查询：<a href="https://gobyexample-cn.github.io/errors">Go by Example · Errors（中文）</a>；官方博客 <a href="https://go.dev/blog/go1.13-errors">Working with Errors in Go 1.13</a>。</p>
+
+  <h2 id="custom">3 · 自定义错误类型</h2>
+  <p>想给错误携带结构化信息（错误码、字段名），定义一个 struct 并实现 <code>Error() string</code> 方法即可——不需要 <code>implements</code> 关键字，Go 的接口是隐式满足的（第 4 课细讲，这里照抄格式就行）：</p>
+<pre><code>type ValidationError struct {
+	Field string
+	Msg   string
+}
+
+func (e *ValidationError) Error() string {   // 有这个方法，它就是 error
+	return fmt.Sprintf("%s 校验失败: %s", e.Field, e.Msg)
+}
+
+// 造：return &amp;ValidationError{Field: "port", Msg: "超出 1-65535"}
+// 查：
+var ve *ValidationError
+if errors.As(err, &amp;ve) {                     // ≈ catch (ValidationError e)
+	fmt.Println("坏字段:", ve.Field)           // 结构化信息都在
+}</code></pre>
+  <p>选型口诀：<strong>只需要"是不是这个错" → 哨兵变量 <code>var ErrXxx = errors.New(...)</code> + <code>errors.Is</code>；需要携带数据 → 自定义类型 + <code>errors.As</code></strong>。Java 的"异常层级体系"在 Go 里就这么朴素。</p>
+
+  <h2 id="defer">4 · defer：finally 的替身，但更顺手</h2>
+  <p>资源关闭是错误处理的另一半。Go 用 <code>defer</code> 把"清理动作"挂在函数出口上：</p>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>try (var f = new FileReader(p)) {
+    // 使用 f
+}   // 自动 close()
+// 或 finally { f.close(); }</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>f, err := os.Open(p)
+if err != nil {
+	return err
+}
+defer f.Close()   // 函数任何出口
+                  // 都会执行
+// 使用 f ...</code></pre></div>
+  </div>
+  <p><code>defer f.Close()</code> 的意思是"<strong>无论这个函数从哪个 <code>return</code> 离开（哪怕 panic），返回前都执行 <code>f.Close()</code></strong>"。功能上就是 try-with-resources / finally，但获取资源和登记释放写在一起，不会漏。三个特性：</p>
+<pre><code>defer fmt.Println("first")
+defer fmt.Println("second")
+// 输出顺序：second、first —— 多个 defer 栈式执行（LIFO）
+
+x := 1
+defer fmt.Println("x =", x)   // 参数在这里就求值了
+x = 2
+// 退出时打印 x = 1，不是 2 ！想打印最终值就传指针或不带参</code></pre>
+  <div class="note">社区惯例：<code>defer</code> 紧跟在资源获取<strong>成功判断</strong>的后面，一行关一件事。数据库连接、锁、HTTP 响应体，全都是这个节奏。</div>
+  <p class="cite">示例查询：<a href="https://gobyexample-cn.github.io/defer">Go by Example · Defer（中文）</a>；官方教程：<a href="https://tour.go-zh.org/flowcontrol/12">A Tour of Go · Defer</a>。</p>
+
+  <h2 id="panic">5 · panic / recover：留给真正的异常</h2>
+  <p><code>panic</code> ≈ Java 里抛出去没人接的 <code>RuntimeException</code>：栈一路展开、程序崩溃退出。数组越界、nil 指针解引用、nil map 写入——这些你前两课见过的崩溃，全是运行时自动 panic。</p>
+  <table>
+    <tr><th></th><th>error</th><th>panic</th></tr>
+    <tr><td>语义</td><td>预期内的失败（文件不存在、参数非法、网络超时）</td><td>不该发生的程序 bug（越界、nil 解引用、init 失败）</td></tr>
+    <tr><td>处理方式</td><td><code>if err != nil</code> 正常处理</td><td>崩溃；或顶层 <code>recover</code> 兜底</td></tr>
+    <tr><td>Java 心智</td><td>受检异常 / Optional.empty</td><td>未捕获 RuntimeException / <code>Error</code></td></tr>
+  </table>
+  <p><strong>业务代码几乎永远该用 error，不要用 panic 做控制流</strong>——这条直觉你可以直接从 Java 搬过来（"别用异常做流程控制"）。<code>recover</code> 只在 <code>defer</code> 的函数里有效，用来把 panic 捞回来：</p>
+<pre><code>func safeDiv(a, b int) (result int) {
+	defer func() {                      // 匿名函数 + defer = 出口钩子
+		if r := recover(); r != nil {   // r 就是 panic 的值
+			result = 0                  // 兜底，程序不崩
+		}
+	}()
+	return a / b                        // b == 0 时 panic: integer divide by zero
+}</code></pre>
+  <p>日常业务代码里你几乎不写 <code>recover</code>——它主要活在框架里（比如 Web 框架给每个请求包一层 recover，单个请求崩了不影响进程）。见到时认识即可。</p>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/flowcontrol/13">A Tour of Go · Panic</a>、<a href="https://tour.go-zh.org/flowcontrol/14">Recover</a>；示例查询：<a href="https://gobyexample-cn.github.io/panic">Go by Example · Panic（中文）</a>。</p>
+
+  <h2 id="exercise">6 · 动手练习：把"抛异常"翻译成"返回错误"</h2>
+  <p><strong>任务：</strong>下面是典型的 Java 校验方法（解析 + 抛异常 + 多 catch）。翻译成 Go：错误一路包装（<code>%w</code>），范围错误用哨兵变量，<code>main</code> 里用 <code>errors.Is</code> 区分处理。写完贴进 <a href="https://go.dev/play/">Go Playground</a> 验证。</p>
+  <div class="panel java"><div class="panel-title">待翻译的 Java</div>
+<pre><code>public class PortUtil {
+
+    public static int parsePort(String input) {
+        int port = Integer.parseInt(input);          // 可能抛 NumberFormatException
+        if (port &lt; 1 || port &gt; 65535) {
+            throw new IllegalArgumentException(
+                "端口必须在 1-65535: " + port);       // 抛自定义信息
+        }
+        return port;
+    }
+
+    public static void main(String[] args) {
+        for (String s : new String[]{"8080", "abc", "99999"}) {
+            try {
+                System.out.println("OK: " + parsePort(s));
+            } catch (NumberFormatException e) {
+                System.out.println("不是数字: " + s);
+            } catch (IllegalArgumentException e) {
+                System.out.println(e.getMessage());
+            }
+        }
+    }
+}
+// 期望输出: OK: 8080 / 不是数字: abc / 端口必须在 1-65535: 99999</code></pre></div>
+  <details>
+    <summary>查看参考答案（先自己写！）</summary>
+<pre><code>package main
+
+import (
+	"errors"
+	"fmt"
+	"strconv"
+)
+
+var ErrPortRange = errors.New("端口必须在 1-65535")   // 哨兵错误
+
+func parsePort(input string) (int, error) {
+	port, err := strconv.Atoi(input)
+	if err != nil {
+		return 0, fmt.Errorf("不是数字 %q: %w", input, err)  // %w 保留底层错误
+	}
+	if port &lt; 1 || port &gt; 65535 {
+		return 0, fmt.Errorf("%w: 得到 %d", ErrPortRange, port)
+	}
+	return port, nil
+}
+
+func main() {
+	for _, s := range []string{"8080", "abc", "99999"} {
+		port, err := parsePort(s)
+		if err != nil {
+			if errors.Is(err, ErrPortRange) {          // ≈ catch (IllegalArgument)
+				fmt.Println(err)
+			} else {                                    // 其他解析错误
+				fmt.Println("不是数字:", s)
+			}
+			continue
+		}
+		fmt.Println("OK:", port)
+	}
+}
+// 输出: OK: 8080 / 不是数字: abc / 端口必须在 1-65535: 得到 99999</code></pre>
+    <p><strong>自评清单：</strong>① 函数签名是 <code>(int, error)</code>，失败时返回 <code>0, err</code>？② Atoi 的 err 用了 <code>%w</code> 包装而不是丢弃？③ 范围错误是包级哨兵 <code>var ErrPortRange</code>？④ main 里用 <code>errors.Is</code> 区分了两种失败？⑤ 没有任何 panic / try-catch 式的东西？</p>
+  </details>
+
+  <h2 id="quiz">7 · 检索测验</h2>
+  <p>前 4 题考本课，后 2 题复习前两课，凭记忆作答：</p>
+  <div id="quiz"></div>
+
+  <h2>8 · 闭卷回忆</h2>
+  <ol>
+    <li>error 在返回值列表的什么位置？<code>err == nil</code> 代表什么？</li>
+    <li><code>%w</code> 和 <code>%v</code> 包装错误的区别是什么？<code>errors.Is</code> 和 <code>errors.As</code> 各对应 Java 的什么？</li>
+    <li>说出 <code>defer</code> 的两个特性；什么场合才轮到 <code>panic</code>？</li>
+  </ol>
+  <details>
+    <summary>核对答案</summary>
+    <ol>
+      <li>最后一个；成功。</li>
+      <li><code>%w</code> 保留错误链（Is/As 还能识别），<code>%v</code> 只是拼字符串；<code>Is</code> ≈ 哨兵值比较，<code>As</code> ≈ <code>catch (Xxx e)</code> / <code>instanceof</code>。</li>
+      <li>LIFO 栈式执行、参数在 defer 语句处求值；panic 留给程序 bug 和不可恢复状态，业务失败一律 error。</li>
+    </ol>
+  </details>
+
+  <h2>9 · 主推资源与下一步</h2>
+  <p><strong>今天的配套任务（约 20 分钟）：</strong>读 Rob Pike 的 <a href="https://blog.go-zh.org/errors-are-values">Errors are values（官方博客中文版）</a>，把"错误是值"的世界观立住；再过一遍 <a href="https://gobyexample-cn.github.io/errors">Go by Example 的 Errors / <span>Defer</span> / Panic</a> 三篇。</p>
+  <p>配套材料：<a href="../reference/go-error-handling-vs-java.html">速查表 · 错误处理对照 Java</a>（可打印）。下节课：<strong>接口（interface）与组合</strong>——Go 没有继承，"面向对象"换了一套玩法：接口隐式实现、小接口组合。这是 Go 设计哲学的核心，也是读懂标准库的钥匙。课里有疑问随时在对话里问我。</p>
+
+  <nav class="lesson-nav">
+    <a href="0002-slices-maps-structs-methods.html">← 第 2 课 · 切片、map、struct 与方法</a>
+    <a href="../reference/go-error-handling-vs-java.html">速查表 →</a>
+  </nav>
+</main>
+
+<script src="../assets/quiz.js"></script>
+<script>
+renderQuiz("#quiz", [
+  {
+    q: "Go 中函数报告\"操作失败\"的惯用方式是？",
+    options: [
+      "throw 抛出异常",
+      "返回 null",
+      "返回 error 值",
+      "返回 -1 表示失败"
+    ],
+    answer: 2,
+    explain: "错误是普通的返回值：最后一个返回值是 error，nil 即成功。没有 try-catch，失败路径全部平铺在代码里——这是 Rob Pike <a href='https://blog.go-zh.org/errors-are-values'>Errors are values</a> 的核心主张。（本课第 1 节）"
+  },
+  {
+    q: "按社区惯例，error 放在返回值列表的哪个位置？",
+    options: [
+      "最后一个",
+      "第一个",
+      "中间任意位置",
+      "放在全局变量里"
+    ],
+    answer: 0,
+    explain: "惯例：<code>func f() (T, error)</code>——error 永远在最后；失败时前面的值返回零值。全世界的 Go 代码都遵守它，review 时看到反例可以直接打回。（本课第 1 节）"
+  },
+  {
+    q: "<code>defer</code> 注册的函数什么时候执行？",
+    options: [
+      "注册后立即执行",
+      "所在函数返回前，多个 defer 按 LIFO",
+      "程序退出时统一执行",
+      "垃圾回收时执行"
+    ],
+    answer: 1,
+    explain: "defer 在函数<strong>任何出口</strong>（含 panic）前执行，多个 defer 后注册的先执行（栈式）。注意参数在 defer 语句处就求值了。（本课第 4 节）"
+  },
+  {
+    q: "包装底层错误并保留错误链，应该用哪个格式动词？",
+    options: [
+      "<code>%s</code>",
+      "<code>%d</code>",
+      "<code>%v</code>",
+      "<code>%w</code>"
+    ],
+    answer: 3,
+    explain: "<code>fmt.Errorf(\"...: %w\", err)</code> 会把底层错误串进链里，上层才能用 <code>errors.Is / errors.As</code> 识别；<code>%v</code> 只拼字符串，链就断了。（本课第 2 节）"
+  },
+  {
+    q: "【复习第 2 课】往 nil map 写入一个键值对，会发生？",
+    options: [
+      "读出零值",
+      "静默写入成功",
+      "运行时 panic",
+      "编译错误"
+    ],
+    answer: 2,
+    explain: "间隔复习：nil map 读安全（零值）、写 panic。别忘了它的兄弟：nil 切片可以直接 append。（第 2 课铁律二）"
+  },
+  {
+    q: "【复习第 2 课】<code>func (p *Player) Heal(n int)</code> 里的 <code>p</code>，角色相当于 Java 的？",
+    options: [
+      "<code>static</code>",
+      "<code>super</code>",
+      "<code>new</code>",
+      "<code>this</code>"
+    ],
+    answer: 3,
+    explain: "间隔复习：接收者就是显式命名的 this，写在 func 和方法名之间；<code>*Player</code> 指针接收者才能修改原值。（第 2 课第 6 节）"
+  }
+]);
+</script>
+</body>
+</html>

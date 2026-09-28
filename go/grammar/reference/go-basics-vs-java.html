@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速查表 · Go 基础语法对照 Java</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Reference · 速查表 01</div>
+  <h1>Go 基础语法对照 Java</h1>
+  <p class="meta">第 1 课配套速查表 · 建议打印贴墙 · <a href="../lessons/0001-go-basics-for-java-developers.html">返回第 1 课</a></p>
+
+  <h2>六条铁律</h2>
+  <ol>
+    <li><strong>没有隐式类型转换</strong>：<code>float64(i)</code> 必须写全。</li>
+    <li><strong>声明未使用的变量 / import 未使用的包 = 编译错误</strong>（Java 只是 warning）。</li>
+    <li><strong>大写导出，小写包内私有</strong>：没有 <code>public/private</code> 关键字。</li>
+    <li><strong>只有 <code>for</code> 一种循环</strong>；<code>if/for/switch</code> 不写括号。</li>
+    <li><strong><code>{</code> 必须跟语句同一行</strong>（编译器按行插入分号）。</li>
+    <li><strong>错误是返回值</strong>（<code>error</code>），不是异常；<code>panic</code> 只留给真正异常的情况。</li>
+  </ol>
+
+  <h2>词汇对照</h2>
+  <table>
+    <tr><th>Java</th><th>Go</th><th>备注</th></tr>
+    <tr><td><code>boolean</code></td><td><code>bool</code></td><td>零值 <code>false</code></td></tr>
+    <tr><td><code>int / long</code></td><td><code>int / int64</code></td><td><code>int</code> 平台相关（如今普遍 64 位）</td></tr>
+    <tr><td><code>double / float</code></td><td><code>float64 / float32</code></td><td>优先 <code>float64</code></td></tr>
+    <tr><td><code>char</code></td><td><code>rune</code></td><td><code>rune</code> 是 <code>int32</code> 别名，存 Unicode 码点</td></tr>
+    <tr><td><code>byte</code></td><td><code>byte</code></td><td><code>byte</code> 是 <code>uint8</code> 别名</td></tr>
+    <tr><td><code>String</code></td><td><code>string</code></td><td>不可变，UTF-8 编码，零值 <code>""</code></td></tr>
+    <tr><td><code>null</code></td><td><code>nil</code></td><td>只能用于指针 / 切片 / map / 接口等</td></tr>
+    <tr><td><code>ArrayList</code></td><td>切片 <code>[]T</code></td><td>后续课程详讲</td></tr>
+    <tr><td><code>HashMap</code></td><td><code>map[K]V</code></td><td>后续课程详讲</td></tr>
+    <tr><td><code>class</code></td><td><code>struct</code> + 方法</td><td>后续课程详讲</td></tr>
+    <tr><td><code>this</code></td><td>方法接收者（receiver）</td><td>后续课程详讲</td></tr>
+    <tr><td><code>extends / implements</code></td><td>组合 + 接口隐式实现</td><td>后续课程详讲</td></tr>
+    <tr><td><code>throws / try-catch</code></td><td>返回 <code>error</code></td><td>后续课程详讲</td></tr>
+    <tr><td><code>jar / maven</code></td><td><code>go.mod / go get</code></td><td>模块机制</td></tr>
+    <tr><td><code>System.out.println</code></td><td><code>fmt.Println</code></td><td>大写 = 可导出</td></tr>
+    <tr><td><code>User.java</code>（文件名 = 类名）</td><td>文件名任意（惯例 <code>user.go</code>）</td><td>同目录必须同 <code>package</code>；包 ≈ 目录</td></tr>
+    <tr><td><code>import com.x.User;</code>（导入类）</td><td><code>import "myapp/user"</code>（导入包）</td><td>Go 永远导入包，不导入单个类型</td></tr>
+    <tr><td><code>private</code>（类内私有）</td><td>无对应</td><td>可见性最小粒度是包；小写 = 包内所有文件可见</td></tr>
+  </table>
+
+  <h2>零值表（声明未初始化时的值）</h2>
+  <table>
+    <tr><th>类型</th><th>零值</th></tr>
+    <tr><td><code>bool</code></td><td><code>false</code></td></tr>
+    <tr><td><code>int / int64 / float64</code> 等数值</td><td><code>0</code></td></tr>
+    <tr><td><code>string</code></td><td><code>""</code>（空串，不是 nil）</td></tr>
+    <tr><td>指针 / 切片 / map / 函数 / 接口 / channel</td><td><code>nil</code></td></tr>
+  </table>
+
+  <h2>Hello, World</h2>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello, 世界");
+    }
+}</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello, 世界")
+}</code></pre></div>
+  </div>
+
+  <h2>变量与常量</h2>
+<pre><code>var x int = 10        // 完整形式（类型在前、在后，对应 Java 的 int x = 10）
+var y = 10            // 类型推断为 int
+var a, b = 1, "hi"    // 一行多个
+z := 10               // 短声明：只能在函数内用，最惯用
+
+const Pi = 3.14159    // 常量，编译期确定，写法同 Java final</code></pre>
+
+  <h2>显式类型转换</h2>
+<pre><code>i := 42
+f := float64(i)       // 必须显式；var f float64 = i 是编译错误
+u := uint(7)
+s := string(65)       // 按码点转：s == "A"（与 Java 强转 char 不同）</code></pre>
+
+  <h2>函数与多返回值</h2>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>static int[] divmod(int a, int b) {
+    return new int[]{a / b, a % b};
+}
+// 调用：int[] r = divmod(17, 5);
+//      r[0], r[1]</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>func divmod(a, b int) (int, int) {
+	return a / b, a % b
+}
+
+q, r := divmod(17, 5) // q=3, r=2
+_, r2 := divmod(17, 5) // _ 丢弃不要的值</code></pre></div>
+  </div>
+<pre><code>func add(a, b int) int { return a + b }  // 参数类型简写：a, b int
+
+func divmod2(a, b int) (q, r int) {      // 命名返回值
+	q = a / b
+	r = a % b
+	return                          // 裸返回（小函数可用，长函数慎用）
+}</code></pre>
+
+  <h2>if / for / switch</h2>
+<pre><code>if score >= 90 {
+	fmt.Println("优")
+} else if score >= 60 {
+	fmt.Println("及格")
+} else {
+	fmt.Println("不及格")
+}
+
+if n := x * 2; n > 100 {   // 带初始化语句：n 只在 if/else 内可见
+	fmt.Println(n)
+}</code></pre>
+<pre><code>for i := 0; i < 5; i++ { }  // 三段式，同 Java for
+for i < 5 { }               // 条件式，同 Java while
+for { break }               // 无限循环，break 跳出</code></pre>
+<pre><code>switch day {
+case "周六", "周日":          // 多值 case，逗号分隔
+	fmt.Println("休息")      // 默认自动 break，无需写
+default:
+	fmt.Println("上班")
+}
+// 需要穿透到下一 case 时，显式写 fallthrough</code></pre>
+
+  <h2>相关链接</h2>
+  <ul>
+    <li><a href="../lessons/0001-go-basics-for-java-developers.html">第 1 课 · 从 Java 到 Go：基础语法</a></li>
+    <li><a href="https://tour.go-zh.org/">A Tour of Go（中文版）</a> — 官方交互教程</li>
+    <li><a href="https://gobyexample-cn.github.io/">Go by Example（中文版）</a> — 示例查询</li>
+    <li><a href="https://go.dev/ref/spec">Go 语言规范</a> — 抠细节时查</li>
+  </ul>
+
+  <p class="cite">本表只覆盖第 1 课范围。切片、map、struct、方法、接口、错误处理、goroutine 见后续课程补充的速查表。</p>
+
+  <nav class="lesson-nav">
+    <a href="../lessons/0001-go-basics-for-java-developers.html">← 第 1 课</a>
+    <a href="https://go.dev/play/">Go Playground ↗</a>
+  </nav>
+</main>
+</body>
+</html>

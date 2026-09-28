@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速查表 · 错误处理对照 Java</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Reference · 速查表 03</div>
+  <h1>错误处理对照 Java</h1>
+  <p class="meta">第 3 课配套速查表 · 建议打印贴墙 · <a href="../lessons/0003-error-handling.html">返回第 3 课</a></p>
+
+  <h2>七条铁律</h2>
+  <ol>
+    <li>error 永远是<strong>最后一个返回值</strong>；<code>nil</code> = 成功。</li>
+    <li>失败时其他返回值给<strong>零值</strong>：<code>return 0, err</code>。</li>
+    <li>err 要么处理要么上抛，<strong>不能静默丢弃</strong>（丢弃也须显式 <code>_ =</code>）。</li>
+    <li>包装错误用 <strong><code>%w</code></strong>（保留链），别用 <code>%v</code>（链断）。</li>
+    <li>判断错误：<strong>值 → <code>errors.Is</code>，类型 → <code>errors.As</code></strong>。</li>
+    <li>资源关闭用 <strong><code>defer</code></strong>，紧跟获取成功的判断之后。</li>
+    <li>业务失败一律 <strong>error 不 panic</strong>；<code>recover</code> 基本只活在框架里。</li>
+  </ol>
+
+  <h2>词汇对照</h2>
+  <table>
+    <tr><th>Java</th><th>Go</th><th>备注</th></tr>
+    <tr><td><code>throw new XxxException()</code></td><td><code>return ..., errors.New("...")</code></td><td>错误是值，不是跳转</td></tr>
+    <tr><td><code>throws XxxException</code></td><td>签名里的 <code>error</code> 返回值</td><td>比 throws 更不可省略</td></tr>
+    <tr><td><code>try { } catch (Xxx e) { }</code></td><td><code>if err != nil { }</code></td><td>错误处理平铺在眼前</td></tr>
+    <tr><td><code>finally { }</code> / try-with-resources</td><td><code>defer f.Close()</code></td><td>函数任何出口都执行</td></tr>
+    <tr><td><code>e.getMessage()</code></td><td><code>err.Error()</code> / 直接 <code>%v</code> 打印</td><td></td></tr>
+    <tr><td><code>catch (MyEx e)</code> / <code>instanceof</code></td><td><code>errors.As(err, &amp;myErr)</code></td><td>按类型取错误</td></tr>
+    <tr><td>异常常量比较（错误码）</td><td><code>errors.Is(err, ErrXxx)</code></td><td>哨兵错误：<code>var ErrXxx = errors.New(...)</code></td></tr>
+    <tr><td><code>new XxxException(msg, cause)</code>（cause 链）</td><td><code>fmt.Errorf("...: %w", err)</code></td><td><code>%w</code> = caused by</td></tr>
+    <tr><td><code>e.getCause()</code></td><td><code>errors.Unwrap(err)</code></td><td>一般不直接用，走 Is/As</td></tr>
+    <tr><td><code>catch (Throwable)</code> 兜底</td><td><code>recover()</code>（只在 defer 里有效）</td><td>框架层的事，业务代码几乎不写</td></tr>
+    <tr><td><code>RuntimeException</code>（unchecked）</td><td>没有对应物</td><td>Go 的哲学：失败全部显式</td></tr>
+  </table>
+
+  <h2>基础 idiom</h2>
+<pre><code>result, err := doSomething()
+if err != nil {
+	return 0, fmt.Errorf("doSomething 失败: %w", err)  // 加上下文并上抛
+}
+// 走到这里 err == nil，安心用 result</code></pre>
+
+  <h2>哨兵错误 / 自定义错误类型</h2>
+<pre><code>var ErrNotFound = errors.New("记录不存在")            // 哨兵：只需判断"是不是"
+return fmt.Errorf("查用户: %w", ErrNotFound)
+errors.Is(err, ErrNotFound)                           // true
+
+type ValidationError struct {                         // 自定义类型：要携带数据
+	Field string
+	Msg   string
+}
+func (e *ValidationError) Error() string {            // 实现 error 接口（隐式）
+	return fmt.Sprintf("%s: %s", e.Field, e.Msg)
+}
+return &amp;ValidationError{Field: "port", Msg: "超范围"}
+var ve *ValidationError
+errors.As(err, &amp;ve)                                   // ≈ catch (ValidationError e)</code></pre>
+
+  <h2>defer</h2>
+<pre><code>f, err := os.Open(path)
+if err != nil {
+	return err
+}
+defer f.Close()          // 函数任何出口（含 panic）前执行
+// 多个 defer：LIFO（后注册先执行）
+// 参数在 defer 语句处求值（之后改变量不影响）
+// recover() 只在 defer 的函数里有效</code></pre>
+
+  <h2>相关链接</h2>
+  <ul>
+    <li><a href="../lessons/0003-error-handling.html">第 3 课 · 错误处理</a></li>
+    <li><a href="https://blog.go-zh.org/errors-are-values">Errors are values（Rob Pike，官方博客中文）</a></li>
+    <li><a href="https://go.dev/blog/go1.13-errors">Working with Errors in Go 1.13（%w / Is / As）</a></li>
+    <li><a href="https://gobyexample-cn.github.io/errors">Go by Example（中文）· Errors / Defer / Panic</a></li>
+    <li><a href="https://gopl-zh.github.io/ch5/ch5-4.html">《Go 语言圣经》§5.4 错误</a></li>
+  </ul>
+
+  <p class="cite">前两张速查表：<a href="go-basics-vs-java.html">01 基础语法</a> · <a href="go-composite-types-vs-java.html">02 复合类型</a>。接口与组合见后续速查表。</p>
+
+  <nav class="lesson-nav">
+    <a href="../lessons/0003-error-handling.html">← 第 3 课</a>
+    <a href="go-composite-types-vs-java.html">速查表 02</a>
+  </nav>
+</main>
+</body>
+</html>
