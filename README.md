@@ -16,7 +16,7 @@
 - [x] 第 2 课 · 切片、map、struct 与方法
 - [x] 第 3 课 · 错误处理（error / 错误链 / defer / panic）
 - [x] 第 4 课 · 接口与组合
-- [ ] 第 5 课 · goroutine 与 channel（并发）
+- [x] 第 5 课 · goroutine 与 channel（并发）
 - [ ] 实战 · 用标准库写一个小项目
 
 入口：浏览器打开 `go/grammar/index.html`（课程目录），从那里进任意一课。

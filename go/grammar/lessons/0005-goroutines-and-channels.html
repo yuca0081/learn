@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 5 课 · goroutine 与 channel：换一种方式写并发</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Go for Java Engineers · Lesson 05</div>
+  <h1>goroutine 与 channel：换一种方式写并发</h1>
+  <p class="meta">预计 35 分钟 · 前置：<a href="0004-interfaces-and-composition.html">第 4 课 接口与组合</a> · 学完你能：用 goroutine / channel / WaitGroup / select 写出地道的 Go 并发，把一段 Java 线程池代码翻译成 Go</p>
+
+  <div class="note">
+    <strong>本课目标：</strong>Java 的并发围绕<strong>线程池、锁和 Future</strong>；Go 的并发围绕<strong>goroutine 和 channel</strong>——线程便宜到不用池，数据靠管道传递而不是靠锁保护。这是 Go 最强的一面，也是它最初走红的原因。读完请完成 <a href="#exercise">翻译练习</a> 和 <a href="#quiz">检索测验</a>。
+  </div>
+
+  <h2 id="s1">1 · goroutine：<code>go</code> 一个关键字</h2>
+  <p>Java 里跑并发任务，你先想线程池：<code>Executors.newFixedThreadPool(n)</code>——因为 OS 线程贵（约 1MB 栈、内核调度），开几千个系统就吃力。Go 把这件事直接拆掉了：</p>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>ExecutorService pool =
+    Executors.newFixedThreadPool(4);
+pool.submit(() -&gt; {
+    System.out.println("干活");
+    return null;
+});
+// 用完还得 shutdown()</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>go func() {
+    fmt.Println("干活")
+}()
+// 就这样。没有池，没有 shutdown</code></pre></div>
+  </div>
+  <p><code>go f()</code> 让函数在新的 <strong>goroutine</strong> 里运行，语句本身<strong>立即返回</strong>、绝不等待。goroutine 是用户态调度的轻量执行体：起步约 2KB 栈、按需增长，单机开几十万个是常态——所以 Go 社区基本不用"池"，要并发就 <code>go</code> 一个。</p>
+<pre><code>func main() {
+	go say("world")   // 新 goroutine，立即返回
+	say("hello")      // main 自己继续跑
+	time.Sleep(time.Second)  // 演示专用：真代码不靠 Sleep 等待
+}</code></pre>
+  <div class="warn">
+    <strong>新手第一坑：</strong><code>main</code> 函数一退出，<strong>所有 goroutine 直接被杀</strong>，没有任何 join 或优雅关闭。如果你的 goroutine "没输出"，八成是 main 跑完了。所以真实代码永远要有等待机制——下一节的 <code>WaitGroup</code> 或 channel。
+  </div>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/concurrency/1">A Tour of Go · goroutine</a>。</p>
+
+  <h2 id="s2">2 · 等它们跑完：sync.WaitGroup</h2>
+  <p>等一组 goroutine 全部完成，标准工具是 <code>sync.WaitGroup</code>——角色相当于 Java 的 <code>CountDownLatch</code>（或挨个 <code>join()</code>）：</p>
+<pre><code>var wg sync.WaitGroup
+for i := 0; i &lt; 3; i++ {
+	wg.Add(1)             // 计数 +1，必须放在 go 之前
+	go func(id int) {
+		defer wg.Done()   // 计数 -1，defer 保证任何出口都执行
+		fmt.Println("worker", id, "完成")
+	}(i)
+}
+wg.Wait()                 // ≈ latch.await()：计数归零才继续
+fmt.Println("全部完成")</code></pre>
+  <p>三条纪律：<strong>Add 放在 go 语句之前</strong>（放 goroutine 里，Wait 可能提前通过）；<strong>Done 用 defer</strong>（panic 也不会漏减，第 3 课的 defer 在这里闪光）；goroutine 之间<strong>不共享局部变量</strong>，要传就传参。</p>
+  <p class="cite">Go 1.22 起 <code>for</code> 循环变量每次迭代都是新变量，闭包可以直接捕获 <code>i</code>；旧版本会三个 goroutine 共享同一个 <code>i</code>——所以老代码里常见 <code>go func(id int){...}(i)</code> 传参写法，看到别奇怪。</p>
+
+  <h2 id="s3">3 · channel：类型化的管道</h2>
+  <p>goroutine 各跑各的，<strong>数据怎么来往？</strong>Java 的答案是共享对象 + 锁；Go 的答案是 channel——一根类型化的管道，语言级语法（不是类库）：</p>
+<pre><code>ch := make(chan string)   // 无缓冲 channel
+
+ch &lt;- "hi"                // 发送：阻塞到有人接收
+msg := &lt;-ch               // 接收：阻塞到有人发送
+fmt.Println(msg)</code></pre>
+  <ul>
+    <li><strong>无缓冲 channel 是"握手"</strong>：发送方阻塞到有接收方到场、两边交接完才各自继续——和 Java 的 <code>SynchronousQueue</code> 同语义。它天然是两个 goroutine 之间的<strong>同步点</strong>。</li>
+    <li>类型严格：<code>chan int</code> 只能传 int，编译器检查，没有 <code>Object</code> 装箱那套。</li>
+    <li>方向可以声明在类型上：<code>func worker(jobs &lt;-chan string, results chan&lt;- int)</code>——只收 jobs、只发 results，写反了编译报错。看函数签名就知道数据流向。</li>
+  </ul>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/concurrency/2">A Tour of Go · channel</a>。</p>
+
+  <h2 id="s4">4 · 缓冲、关闭与 range：channel 的生命周期</h2>
+<pre><code>ch := make(chan int, 3)   // 容量 3 ≈ new ArrayBlockingQueue&lt;Integer&gt;(3)
+ch &lt;- 1                   // 没满，不阻塞
+close(ch)                 // 发送方宣布：不会再发了
+
+v, ok := &lt;-ch             // 排空期间 ok=true；排空后 v=0, ok=false
+for x := range ch {       // 收到关闭信号自动退出循环
+	fmt.Println(x)
+}</code></pre>
+  <p><code>close(ch)</code> 是发送方的"我说完了"信号，接收方靠 <code>ok</code> 或 <code>range</code> 感知结束——Java 里你得发明"毒丸对象"塞进队列让消费者停工，Go 把它做成了语言特性。</p>
+  <div class="warn">
+    <strong>channel 行为铁律：</strong>① <strong>只由发送方关闭</strong>，且只关一次——向已关闭的 channel 发送是 panic，重复 close 也是 panic；② 从已关闭的 channel <strong>接收</strong>不 panic：先排空，然后永远立即返回<em>零值 + false</em>，绝不阻塞；③ <code>nil</code> channel（零值）收发都永久阻塞——"忘了 make"的症状就是整个程序卡死。记不全就记这张小表：
+  </div>
+  <table>
+    <tr><th>操作</th><th>nil channel</th><th>已关闭</th><th>正常</th></tr>
+    <tr><td>发送 <code>ch &lt;-</code></td><td>永久阻塞</td><td><strong>panic</strong></td><td>阻塞到有接收者 / 有空位</td></tr>
+    <tr><td>接收 <code>&lt;-ch</code></td><td>永久阻塞</td><td>零值 + false（不阻塞）</td><td>阻塞到有发送者 / 有数据</td></tr>
+    <tr><td><code>close(ch)</code></td><td>panic</td><td>panic</td><td>—</td></tr>
+  </table>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/concurrency/3">缓冲 channel</a>、<a href="https://tour.go-zh.org/concurrency/5">close 与 range</a>。</p>
+
+  <h2 id="s5">5 · select：同时等多个 channel</h2>
+  <p>一个 goroutine 要等好几路消息（数据、超时、退出信号），Java 里得 <code>CompletableFuture.anyOf</code> 或自己组合条件锁；Go 里是语言级的 <code>select</code>：</p>
+<pre><code>select {
+case msg := &lt;-ch1:
+	fmt.Println("收到:", msg)
+case ch2 &lt;- "x":
+	fmt.Println("发出去了")
+case &lt;-time.After(time.Second):
+	fmt.Println("等超时了")   // time.After 返回一个定时 channel
+}</code></pre>
+  <ul>
+    <li>多个 case 同时就绪 → <strong>随机选一个</strong>（防止某一路被饿死）；全没就绪 → 阻塞。</li>
+    <li>加 <code>default:</code> 分支就变成<strong>非阻塞</strong>探测——"有就处理，没有先干别的"。</li>
+    <li>case 是 channel 操作，<strong>发送和接收都能等</strong>。</li>
+  </ul>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/concurrency/6">A Tour of Go · select</a>；Go by Example：<a href="https://gobyexample-cn.github.io/select">Select</a>。</p>
+
+  <h2 id="s6">6 · 哲学：通过通信共享内存</h2>
+  <p>Go 也有锁：<code>sync.Mutex</code>（≈ <code>ReentrantLock</code>）、<code>sync.Once</code>、<code>sync/atomic</code>，都能用。但社区的信条是 Rob Pike 那句话：</p>
+  <blockquote>Don't communicate by sharing memory; share memory by communicating.<br>不要用共享内存来通信，要用通信来共享内存。</blockquote>
+  <p>落到写法上：<strong>数据的所有权随 channel 转移</strong>——一个 goroutine 把数据发出去，就别再碰它；接收方拿到后独占处理。没有两个执行流抢同一块内存，多数场景锁就不需要了。拿不准有没有竞争时，让编译工具替你查：</p>
+<pre><code>go run -race main.go     # 或 go test -race
+# 内置数据竞争检测器：发现无同步的并发读写直接报</code></pre>
+  <p>实战分工：goroutine 之间<strong>传数据、传结果、传"做完了"</strong> → channel；保护<strong>结构体内部的字段</strong>（如缓存的 map） → <code>sync.Mutex</code>。锁是最后手段，不是默认选项。</p>
+  <p class="cite">官方博客：<a href="https://blog.go-zh.org/share-memory-by-communicating">Share Memory By Communicating（中文版）</a>；《Go 语言圣经》<a href="https://gopl-zh.github.io/ch8/ch8.html">第 8 章 goroutine 和 channel</a>。</p>
+
+  <h2 id="exercise">7 · 动手练习：把 Java 翻译成 Go</h2>
+  <p><strong>任务：</strong>把下面的 Java 翻译成 Go。模式是并发课最常见的"扇出—收集"：每个任务一个 goroutine（≈ <code>submit</code>），结果从 channel 收（≈ <code>Future.get</code>），WaitGroup 等全部完成：</p>
+  <div class="panel java"><div class="panel-title">待翻译的 Java</div>
+<pre><code>import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        List&lt;String&gt; urls = List.of("go.dev", "java.com", "golang.org");
+
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        List&lt;Future&lt;Integer&gt;&gt; futures = new ArrayList&lt;&gt;();
+        for (String u : urls) {
+            futures.add(pool.submit(u::length));   // 每个任务一个 Future
+        }
+
+        int sum = 0;
+        for (Future&lt;Integer&gt; f : futures) {
+            sum += f.get();                        // 阻塞等每个结果
+        }
+        pool.shutdown();
+        System.out.println(sum);  // 6+8+10 = 24
+    }
+}</code></pre></div>
+  <p>先自己写，贴进 <a href="https://go.dev/play/">Go Playground</a> 验证输出是 <code>24</code>，再对照答案：</p>
+  <details>
+    <summary>查看参考答案（先自己写！）</summary>
+<pre><code>package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func main() {
+	urls := []string{"go.dev", "java.com", "golang.org"}
+	results := make(chan int)
+
+	var wg sync.WaitGroup
+	for _, u := range urls {
+		wg.Add(1)                 // 放在 go 之前
+		go func(url string) {     // ≈ pool.submit
+			defer wg.Done()
+			results &lt;- len(url)   // ≈ Future 里塞结果
+		}(u)
+	}
+
+	go func() {
+		wg.Wait()                 // 全部完成后……
+		close(results)            // ……由这个 goroutine 关闭结果管道
+	}()
+
+	sum := 0
+	for n := range results {      // ≈ 逐个 f.get()，收完自动退出
+		sum += n
+	}
+	fmt.Println(sum)              // 24（结果顺序无关，总和确定）
+}</code></pre>
+    <p><strong>自评清单：</strong>① <code>wg.Add(1)</code> 在 <code>go</code> 语句之前？② goroutine 里用 <code>defer wg.Done()</code>？③ 发送全在 goroutine 里、main 只负责收？④ <code>close(results)</code> 在 <code>wg.Wait()</code> 之后的独立 goroutine 里（main 还在 <code>range</code> 阻塞收数，不能自己关自己收）？⑤ 收结果用 <code>range</code> 自动退出？——五条全中，你就把 Go 并发的黄金骨架写出来了。这个"扇出 + WaitGroup + close + range 收尾"的模式值得背下来，生产代码里到处都是它。</p>
+  </details>
+
+  <h2 id="quiz">8 · 检索测验</h2>
+  <p>前 5 题考本课，后 2 题复习前两课，凭记忆作答：</p>
+  <div id="quiz"></div>
+
+  <h2>9 · 闭卷回忆</h2>
+  <p>最后 60 秒，不看上文回答三个问题，再滚动到底部核对：</p>
+  <ol>
+    <li><code>main</code> 函数退出时，其他 goroutine 会怎样？用什么等待它们？</li>
+    <li>无缓冲和有缓冲 channel 的阻塞规则分别是什么？向已关闭的 channel <em>发送</em>和<em>接收</em>各会发生什么？</li>
+    <li>channel 应该由谁关闭？<code>for range ch</code> 什么时候结束？</li>
+  </ol>
+  <details>
+    <summary>核对答案</summary>
+    <ol>
+      <li>直接被杀，没有优雅关闭；用 <code>sync.WaitGroup</code> 或 channel 等待。</li>
+      <li>无缓冲：发送等接收者、接收等发送者（握手）；有缓冲：满了发送才阻塞、空了接收才阻塞。<em>发送</em>到已关闭 → panic；<em>接收</em> → 不 panic，排空后立即得零值 + <code>ok=false</code>。</li>
+      <li>发送方（且只关一次）；接收方排空所有已发送的值后自动退出。</li>
+    </ol>
+  </details>
+
+  <h2>10 · 主推资源与下一步</h2>
+  <p><strong>今天的配套任务（约 20 分钟）：</strong>把 <a href="https://tour.go-zh.org/concurrency/1">A Tour of Go 中文版 · 并发</a> 整章过完（goroutine → channel → 遍历 → select，每页都能跑）；再读 Rob Pike 的 <a href="https://blog.go-zh.org/share-memory-by-communicating">Share Memory By Communicating（中文版）</a>，把本课第 6 节的世界观立住。</p>
+  <p>配套材料：<a href="../reference/go-concurrency-vs-java.html">速查表 · 并发对照 Java</a>（可打印）。语法课到这里就结课了——下一步是<strong>实战：用标准库写一个小项目</strong>，把五节课的变量、struct、错误处理、接口和并发串成一个真东西。想加练本课，可以先在 Playground 里把练习改成"固定 2 个 worker 的 worker pool"版本。课里有疑问，随时在对话里问我。</p>
+
+  <nav class="lesson-nav">
+    <a href="0004-interfaces-and-composition.html">← 第 4 课 · 接口与组合</a>
+    <a href="../index.html">课程目录</a>
+    <a href="../reference/go-concurrency-vs-java.html">速查表 →</a>
+  </nav>
+</main>
+
+<script src="../assets/quiz.js"></script>
+<script>
+renderQuiz("#quiz", [
+  {
+    q: "关于 goroutine，说法正确的是？",
+    options: [
+      "需要继承 Thread 类或实现 Runnable 接口",
+      "main 函数会自动等待所有 goroutine 结束",
+      "<code>go f()</code> 启动后立即返回，不等待 f 执行完",
+      "goroutine 开多了性能急剧下降，最多几百个"
+    ],
+    answer: 2,
+    explain: "<code>go</code> 语句立即返回；goroutine 起步约 2KB 栈、用户态调度，几十万个是常态。注意 main 退出时所有 goroutine <strong>直接被杀</strong>——等待要靠 WaitGroup 或 channel。（<a href='https://tour.go-zh.org/concurrency/1'>Tour · goroutine</a>）"
+  },
+  {
+    q: "无缓冲 channel <code>ch := make(chan int)</code>，在只有 main 一个 goroutine 时执行 <code>ch &lt;- 1</code>，会？",
+    options: [
+      "立即写入内部缓冲区",
+      "数据被丢弃",
+      "运行时 panic",
+      "阻塞——所有 goroutine 都睡了，报 fatal error 死锁"
+    ],
+    answer: 3,
+    explain: "无缓冲 channel 是<strong>握手</strong>：发送阻塞到有接收者到场。只有自己一个 goroutine 时没人接，Go 运行时直接报 <code>fatal error: all goroutines are asleep - deadlock!</code>。想先存后排用缓冲 channel。（<a href='https://tour.go-zh.org/concurrency/2'>Tour · channel</a>）"
+  },
+  {
+    q: "channel 被 <code>close</code> 且缓冲里的值排空后，再 <code>v, ok := &lt;-ch</code> 得到？",
+    options: [
+      "零值和 ok=false，且永不阻塞",
+      "panic",
+      "永久阻塞",
+      "返回最后一次发送的值"
+    ],
+    answer: 0,
+    explain: "关闭后先排空在途的值，之后每次接收<strong>立即返回零值 + false</strong>，绝不阻塞——<code>for range ch</code> 正是靠这个机制自动退出循环。（<a href='https://tour.go-zh.org/concurrency/5'>Tour · range 与 close</a>）"
+  },
+  {
+    q: "谁应该负责 <code>close(ch)</code>？",
+    options: [
+      "接收方，表示我不要数据了",
+      "发送方，表示不会再发了",
+      "收发双方谁先闲下来谁关",
+      "运行时在 GC 时自动关闭"
+    ],
+    answer: 1,
+    explain: "close 是发送方的\"我说完了\"信号。向已关闭的 channel 发送、重复 close 都是 <strong>panic</strong>；接收方关闭 channel 是设计错误。多个发送方时用额外的完成 channel 或约定只关一次。（本课第 4 节）"
+  },
+  {
+    q: "<code>select</code> 语句的行为是？",
+    options: [
+      "按 case 书写顺序逐个尝试",
+      "必须和 for 循环搭配使用",
+      "多个 case 就绪时随机选一个；全没就绪则阻塞（有 default 则走 default）",
+      "只能等待接收，不能等待发送"
+    ],
+    answer: 2,
+    explain: "随机选择防止某一路被饿死；case 里收发都能等；配 <code>time.After</code> 做超时、加 <code>default</code> 变非阻塞探测。Java 里等价逻辑要靠 <code>anyOf</code> 或手搓条件锁。（<a href='https://tour.go-zh.org/concurrency/6'>Tour · select</a>）"
+  },
+  {
+    q: "【复习第 4 课】<code>var _ Shape = Circle{}</code> 这行代码的作用？",
+    options: [
+      "创建一个 Circle 实例备用",
+      "编译期断言 Circle 满足 Shape 接口，不满足直接编译报错",
+      "把 Circle 强制转换成 Shape",
+      "没有实际意义，随时可删"
+    ],
+    answer: 1,
+    explain: "间隔复习：<code>_</code> 丢弃赋值只留下编译检查，是接口实现最便宜的单测——方法集差一个就编不过。（第 4 课第 1 节）"
+  },
+  {
+    q: "【复习第 3 课】goroutine 里写 <code>defer wg.Done()</code>，它依赖 defer 的哪个特性？",
+    options: [
+      "在函数任何出口（含 panic）前执行，保证计数一定被减",
+      "多个 defer 按 LIFO 顺序执行",
+      "异步执行，不阻塞函数返回",
+      "只有发生 panic 时才执行"
+    ],
+    answer: 0,
+    explain: "间隔复习：defer 在函数<strong>任何出口</strong>前执行——goroutine 里就算 panic 也不会漏掉 Done。和 Add 放 go 之前、Wait 等归零合称 WaitGroup 三纪律。（第 3 课第 4 节 + 本课第 2 节）"
+  }
+]);
+</script>
+</body>
+</html>

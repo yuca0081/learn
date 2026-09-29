@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速查表 · 并发对照 Java（goroutine / channel / select）</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Reference · 速查表 05</div>
+  <h1>并发对照 Java</h1>
+  <p class="meta">第 5 课配套速查表 · 建议打印贴墙 · <a href="../lessons/0005-goroutines-and-channels.html">返回第 5 课</a></p>
+
+  <h2>七条铁律</h2>
+  <ol>
+    <li><code>go f()</code> 立即返回；<strong>main 退出 = 所有 goroutine 被杀</strong>，退出前先安排等待。</li>
+    <li>无缓冲 channel 是<strong>握手</strong>（收发到齐才放行）；有缓冲 channel 是排队。</li>
+    <li>channel <strong>只由发送方关闭</strong>，且只关一次；向已关闭发送 / 重复 close = panic。</li>
+    <li>结束判断用 <code>v, ok := &lt;-ch</code> 的 ok，或 <code>for range ch</code> 自动退出。</li>
+    <li>WaitGroup 三纪律：<strong>Add 放 go 之前、Done 用 defer、Wait 等归零</strong>。</li>
+    <li>select：就绪多个<strong>随机选</strong>，全没就绪<strong>阻塞</strong>；加 default 变非阻塞。</li>
+    <li>优先 channel 传数据；真要共享内存用 <code>sync.Mutex</code>，并跑 <code>-race</code> 检查。</li>
+  </ol>
+
+  <h2>词汇对照</h2>
+  <table>
+    <tr><th>Java</th><th>Go</th><th>备注</th></tr>
+    <tr><td><code>new Thread(r).start()</code> / <code>executor.submit(r)</code></td><td><code>go f()</code></td><td>goroutine 起步 ~2KB，随手开</td></tr>
+    <tr><td><code>ExecutorService</code> 线程池</td><td>不用池；要限流用 worker pool 模式</td><td>goroutine 太便宜，池没意义</td></tr>
+    <tr><td><code>Thread.join()</code> / <code>CountDownLatch</code></td><td><code>sync.WaitGroup</code>（Add / Done / Wait）</td><td>Add 在 go 前，Done 用 defer</td></tr>
+    <tr><td><code>Future.get()</code></td><td>从结果 channel 接收 <code>&lt;-results</code></td><td>结果也是通信</td></tr>
+    <tr><td><code>BlockingQueue&lt;T&gt;</code>（put / take）</td><td><code>make(chan T, n)</code>（<code>ch &lt;- v</code> 发 / <code>&lt;-ch</code> 收）</td><td>有缓冲：满阻塞发、空阻塞收</td></tr>
+    <tr><td><code>SynchronousQueue&lt;T&gt;</code></td><td><code>make(chan T)</code>（无缓冲）</td><td>交接即同步点</td></tr>
+    <tr><td>毒丸对象（poison pill）停消费者</td><td><code>close(ch)</code> + <code>range</code></td><td>语言级结束信号</td></tr>
+    <tr><td><code>CompletableFuture.anyOf</code> / 多路等待</td><td><code>select { case ... }</code></td><td>收发都能等；配 time.After 做超时</td></tr>
+    <tr><td><code>synchronized</code> / <code>ReentrantLock</code></td><td><code>sync.Mutex</code>（Lock / Unlock）</td><td>社区首选 channel，锁是最后手段</td></tr>
+    <tr><td><code>volatile</code> / <code>AtomicInteger</code></td><td><code>sync/atomic</code></td><td>先想 channel，再想锁，最后 atomic</td></tr>
+    <tr><td>数据竞争靠外部工具（jcstress…）</td><td><code>go run -race</code> / <code>go test -race</code></td><td>竞争检测器内置</td></tr>
+  </table>
+
+  <h2>channel 行为速查</h2>
+  <table>
+    <tr><th>操作</th><th>nil channel</th><th>已关闭</th><th>正常</th></tr>
+    <tr><td>发送 <code>ch &lt;-</code></td><td>永久阻塞</td><td><strong>panic</strong></td><td>阻塞到有接收者 / 有空位</td></tr>
+    <tr><td>接收 <code>&lt;-ch</code></td><td>永久阻塞</td><td>零值 + false（不阻塞）</td><td>阻塞到有发送者 / 有数据</td></tr>
+    <tr><td><code>close(ch)</code></td><td>panic</td><td>panic</td><td>—</td></tr>
+  </table>
+
+  <h2>基础 idiom：扇出—收集（本课练习的骨架）</h2>
+<pre><code>results := make(chan int)
+
+var wg sync.WaitGroup
+for _, u := range urls {
+	wg.Add(1)                 // 放在 go 之前
+	go func(url string) {
+		defer wg.Done()       // 任何出口都执行
+		results &lt;- len(url)
+	}(u)
+}
+
+go func() {
+	wg.Wait()                 // 全部完成后
+	close(results)            // 由独立 goroutine 关闭（main 还在收）
+}()
+
+sum := 0
+for n := range results {      // 收完自动退出
+	sum += n
+}</code></pre>
+
+  <h2>select 常用姿势</h2>
+<pre><code>select {
+case msg := &lt;-ch:              // 等数据
+	fmt.Println(msg)
+case &lt;-time.After(time.Second): // 等超时
+	fmt.Println("timeout")
+case &lt;-done:                   // 等退出信号
+	return
+}
+
+select {                       // 非阻塞探测
+case v := &lt;-ch:
+	fmt.Println(v)
+default:                       // 没就绪就走这里
+	fmt.Println("先干别的")
+}</code></pre>
+
+  <h2>相关链接</h2>
+  <ul>
+    <li><a href="../lessons/0005-goroutines-and-channels.html">第 5 课 · goroutine 与 channel</a></li>
+    <li><a href="https://tour.go-zh.org/concurrency/1">A Tour of Go · 并发</a></li>
+    <li><a href="https://blog.go-zh.org/share-memory-by-communicating">Share Memory By Communicating（Rob Pike，官方博客中文）</a></li>
+    <li><a href="https://gopl-zh.github.io/ch8/ch8.html">《Go 语言圣经》第 8 章 · goroutine 和 channel</a></li>
+    <li><a href="https://gobyexample-cn.github.io/goroutines">Go by Example（中文）· Goroutines / Channels / Select / Worker Pools / WaitGroup</a></li>
+  </ul>
+
+  <p class="cite">本表覆盖第 5 课。context 取消、sync 包更多原语，见实战课补充。</p>
+
+  <nav class="lesson-nav">
+    <a href="../lessons/0005-goroutines-and-channels.html">← 第 5 课</a>
+    <a href="../index.html">课程目录</a>
+    <a href="go-interfaces-vs-java.html">速查表 04</a>
+  </nav>
+</main>
+</body>
+</html>
