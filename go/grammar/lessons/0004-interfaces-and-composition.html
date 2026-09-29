@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 4 课 · 接口与组合：没有继承的面向对象</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Go for Java Engineers · Lesson 04</div>
+  <h1>接口与组合：没有继承的面向对象</h1>
+  <p class="meta">预计 30 分钟 · 前置：<a href="0003-error-handling.html">第 3 课 错误处理</a> · 学完你能：读懂标准库的接口设计，用隐式实现、小接口和嵌入写出 Go 风格的抽象，并把一个 Java 接口 + 多实现翻译成 Go</p>
+
+  <div class="note">
+    <strong>本课目标：</strong>Java 的"面向对象"三大件是类、继承、接口；Go 砍掉了继承，把接口做成隐式实现。这不是功能缺失，而是 Go 设计哲学的核心——<em>行为看方法集，抽象看小接口，复用靠组合</em>。这也是读懂标准库的钥匙：读完请完成 <a href="#exercise">翻译练习</a> 和 <a href="#quiz">检索测验</a>。
+  </div>
+
+  <h2 id="s1">1 · 隐式实现：没有 <code>implements</code> 关键字</h2>
+  <p>Java 里类型和接口是<strong>声明时绑定</strong>的——类必须写 <code>implements Notifier</code>。Go 里类型和接口是<strong>编译器按方法集匹配</strong>的：只要类型拥有接口要求的全部方法，它就自动满足该接口，类型本身根本不需要知道接口的存在：</p>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java</div>
+<pre><code>interface Notifier {
+    void send(String msg);
+}
+
+// 必须显式声明 implements，
+// 还必须 import 这个接口
+class EmailNotifier
+        implements Notifier {
+    @Override
+    public void send(String msg) {
+        System.out.println("邮件: " + msg);
+    }
+}</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go</div>
+<pre><code>type Notifier interface {
+	Send(msg string)
+}
+
+type EmailNotifier struct{}
+
+// 没写 implements——方法齐了就满足
+func (EmailNotifier) Send(msg string) {
+	fmt.Println("邮件:", msg)
+}
+
+// 想编译期确认？一行断言：
+var _ Notifier = EmailNotifier{}</code></pre></div>
+  </div>
+  <p>这叫<strong>隐式实现</strong>，相当于"静态版鸭子类型"：编译器不看血统声明，只看方法集。威力在于——你可以给<strong>别人包里的类型</strong>"补"一个接口视角，一行代码都不用改人家。比如标准库的 <code>http.ResponseWriter</code> 没实现任何叫 <code>Stringer</code> 的东西，但你可以随时定义一个只含 <code>Write(p []byte) (int, error)</code> 的小接口，它就自动满足。</p>
+  <p><code>var _ Notifier = EmailNotifier{}</code> 这个写法值得记住：<code>_</code> 丢弃赋值，只留下编译检查——类型不满足接口时这里直接编译报错，是最便宜的单测。</p>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/methods/9">A Tour of Go · 接口</a>。</p>
+
+  <h2 id="s2">2 · Go 的接口哲学：小接口 + 消费者定义</h2>
+  <p>Java 社区的接口常常 3–5 个方法起步，接口跟着<strong>实现者</strong>走（<code>UserServiceImpl</code> 旁边放个 <code>UserService</code>）。Go 反过来：</p>
+  <ul>
+    <li><strong>接口越小越好。</strong>标准库的招牌接口几乎都只有 1 个方法：<code>error</code>（<code>Error() string</code>）、<code>fmt.Stringer</code>（<code>String() string</code>）、<code>io.Reader</code>、<code>io.Writer</code>。Rob Pike 的谚语："The bigger the interface, the weaker the abstraction."（接口越大，抽象越弱。）</li>
+    <li><strong>接口定义在消费者包里，不是实现者包里。</strong>谁用这个抽象，谁定义它长什么样——这样接口只包含消费者真正需要的方法，实现者也不用 import 消费者。</li>
+    <li><strong>惯用法：accept interfaces, return structs</strong>。函数参数收接口（灵活），返回值给具体类型（信息全）。和 Java 里"返回值也声明成接口"的习惯相反。</li>
+  </ul>
+  <p>你在第 3 课已经用过这套哲学了——<code>error</code> 就是个只有 <code>Error() string</code> 一个方法的接口，你写的 <code>*ValidationError</code> 没声明任何东西，就自动成了 error。</p>
+
+  <h2 id="s3">3 · 接口值的真面目：一对（类型，值）</h2>
+  <p>Java 的接口引用底下就是一个普通对象引用；Go 的接口值内部是<strong>两个词</strong>：动态类型 + 动态值。这个模型解释了一个著名的坑：</p>
+<pre><code>type MyErr struct{}
+func (e *MyErr) Error() string { return "boom" }
+
+func main() {
+	var p *MyErr = nil
+	var err error = p      // 装进接口：类型是 *MyErr，值是 nil
+	fmt.Println(err == nil) // false！接口有类型就不等于 nil
+}</code></pre>
+  <div class="warn">
+    <strong>nil 陷阱：</strong>接口值 <code>== nil</code> 当且仅当<strong>类型和值都是 nil</strong>。把一个具体类型的 nil 指针装进接口，接口就不是 nil 了——Java 里 <code>(Exception) null == null</code> 是 true，Go 里对应场景是 false。铁律：<strong>返回 error 时要么返回真 nil，要么返回有效错误，别返回具体类型的 nil 指针</strong>。
+  </div>
+
+  <h2 id="s4">4 · 方法集规则：*T 的方法不借给 T</h2>
+  <p>第 2 课讲过值接收者和指针接收者，它们和接口相遇时有一条硬规则：</p>
+  <ul>
+    <li>方法用<strong>值接收者</strong> <code>(t T)</code> → <code>T</code> 和 <code>*T</code> 的方法集都有它 → 两者都能满足接口。</li>
+    <li>方法用<strong>指针接收者</strong> <code>(t *T)</code> → 只有 <code>*T</code> 的方法集有它 → <strong>只有 <code>*T</code> 能满足接口</strong>。</li>
+  </ul>
+<pre><code>type Counter interface{ Next() int }
+
+type counter struct{ n int }
+func (c *counter) Next() int { c.n++; return c.n }
+
+var _ Counter = &amp;counter{}  // ✅ 指针满足
+var _ Counter = counter{}   // ❌ 编译错误：Next 是 *counter 的方法</code></pre>
+  <p>原因很朴素：接口值装箱后拿不到可寻址的副本，编译器没法替你 <code>(&amp;x).Next()</code>。实战推论：<strong>方法集里有任何一个指针接收者方法，就统一全用指针接收者</strong>，然后把 <code>&amp;T{}</code> 装进接口。这是你在 Go 里最常见的报错之一。</p>
+
+  <h2 id="s5">5 · 组合而不是继承</h2>
+  <h3>接口嵌入：小接口拼成大接口</h3>
+<p>Java 用 <code>extends</code> 扩展接口；Go 直接把接口<strong>嵌入</strong>接口：</p>
+<pre><code>type Reader interface{ Read(p []byte) (int, error) }
+type Writer interface{ Write(p []byte) (int, error) }
+
+type ReadWriter interface {   // ≈ extends Reader, Writer
+	Reader
+	Writer
+}</code></pre>
+  <p>标准库的 <code>io.ReadWriter</code>、<code>io.ReadWriteCloser</code> 全是这么拼出来的。接口方法少到 1 个，再用嵌入自由组合——这就是 Go 标准库抽象的积木逻辑。</p>
+
+  <h3>struct 嵌入 ≠ 继承</h3>
+  <div class="compare">
+    <div class="panel java"><div class="panel-title">Java · extends</div>
+<pre><code>class Animal {
+    String name;
+    String describe() {
+        return "我是 " + name;
+    }
+}
+
+class Dog extends Animal {
+    @Override
+    String describe() {       // 多态覆盖
+        return "汪！我叫 " + name;
+    }
+}
+
+Animal a = new Dog();  // is-a，向上转型
+a.describe();          // 动态绑定 → "汪！"</code></pre></div>
+    <div class="panel go"><div class="panel-title">Go · 嵌入</div>
+<pre><code>type Animal struct{ Name string }
+func (a Animal) Describe() string {
+	return "我是 " + a.Name
+}
+
+type Dog struct {
+	Animal        // 嵌入：字段/方法提升
+	Loud bool
+}
+
+d := Dog{Animal: Animal{Name: "旺财"}}
+d.Name        // 提升字段，直接访问
+d.Describe()  // 提升方法，语法上像自己的
+
+// 没有 override，没有多态：
+// Dog 不是 Animal 的子类型</code></pre></div>
+  </div>
+  <table>
+    <tr><th>能力</th><th>Java extends</th><th>Go 嵌入</th></tr>
+    <tr><td>复用字段与方法（少写代码）</td><td>✅</td><td>✅ 提升到外层，直接 <code>d.Name</code> / <code>d.Describe()</code></td></tr>
+    <tr><td>is-a 关系 / 向上转型</td><td>✅ <code>Animal a = new Dog()</code></td><td>❌ <code>var a Animal = d</code> 编译错误（<code>d.Animal</code> 才是）</td></tr>
+    <tr><td>覆盖 + 动态多态</td><td>✅ 调谁由运行时类型决定</td><td>❌ 内层方法不知道自己被嵌入，永远不会回调外层</td></tr>
+    <tr><td>访问"父类"</td><td><code>super.xxx()</code></td><td>没有 super，显式写 <code>d.Animal.Describe()</code></td></tr>
+  </table>
+  <p>所以 Java 里你想用继承的地方，Go 的答案是<strong>两件套</strong>：要多态 → 定义小接口 + 各类型各自实现；要复用 → struct 嵌入。继承能干的两件事，Go 拆开各给了一个更简单的机制。</p>
+
+  <h2 id="s6">6 · 类型断言、type switch 与 Stringer</h2>
+  <h3>类型断言 ≈ instanceof</h3>
+<pre><code>var v any = "hello"        // any = interface{}，Go 的 Object
+
+s := v.(string)            // 断言：不是 string 直接 panic（≈ 强转）
+s, ok := v.(string)        // 安全版：不符时 ok=false，不 panic
+
+switch x := v.(type) {     // type switch ≈ instanceof 链 / 模式匹配
+case string:
+	fmt.Println("字符串, 长度", len(x))
+case int:
+	fmt.Println("整数:", x)
+default:
+	fmt.Println("其他")
+}</code></pre>
+  <p>Java 16+ 的 <code>if (v instanceof String s)</code> 模式匹配和 type switch 神似。处理 <code>any</code>（空接口）时，type switch 是标准姿势；对<strong>自己定义的接口</strong>，尽量别下断言——那是没设计好接口的信号。</p>
+
+  <h3>String() 方法 ≈ toString()</h3>
+<pre><code>type Player struct{ Name string; Lv int }
+
+func (p Player) String() string {           // 实现 fmt.Stringer
+	return fmt.Sprintf("%s(Lv.%d)", p.Name, p.Lv)
+}
+
+fmt.Println(Player{"Gopher", 3})  // Gopher(Lv.3)——fmt 自动调 String()</code></pre>
+  <p>和 Java 的 <code>toString()</code> 完全同构：<code>fmt</code> 家族打印时发现值实现了 <code>Stringer</code> 就自动调用。你的 <code>%v</code> 输出难看？给类型加个 <code>String()</code> 就好。</p>
+  <p class="cite">官方教程：<a href="https://tour.go-zh.org/methods/16">类型断言</a>、<a href="https://tour.go-zh.org/methods/17">Stringer</a>；Go by Example：<a href="https://gobyexample-cn.github.io/type-switches">Type Switches</a>。</p>
+
+  <h2 id="exercise">7 · 动手练习：把 Java 翻译成 Go</h2>
+  <p><strong>任务：</strong>把下面的 Java 翻译成 Go。覆盖本课要点：接口、两个隐式实现、接口切片（多态容器）、range 遍历——顺带复习第 2 课的 struct 和方法：</p>
+  <div class="panel java"><div class="panel-title">待翻译的 Java</div>
+<pre><code>import java.util.List;
+
+interface Shape {
+    double area();
+}
+
+class Circle implements Shape {
+    double r;
+    Circle(double r) { this.r = r; }
+    public double area() { return 3.14159 * r * r; }
+}
+
+class Rect implements Shape {
+    double w, h;
+    Rect(double w, double h) { this.w = w; this.h = h; }
+    public double area() { return w * h; }
+}
+
+public class Main {
+    // 计算任意一组图形的面积总和
+    public static double totalArea(List&lt;Shape&gt; shapes) {
+        double sum = 0;
+        for (Shape s : shapes) sum += s.area();
+        return sum;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(totalArea(List.of(new Circle(2), new Rect(3, 4))));
+        // 期望输出: 24.56636
+    }
+}</code></pre></div>
+  <p>先自己写，贴进 <a href="https://go.dev/play/">Go Playground</a> 验证输出是 <code>24.56636</code>，再对照答案：</p>
+  <details>
+    <summary>查看参考答案（先自己写！）</summary>
+<pre><code>package main
+
+import "fmt"
+
+type Shape interface {
+	Area() float64
+}
+
+type Circle struct{ R float64 }
+
+func (c Circle) Area() float64 { return 3.14159 * c.R * c.R }
+
+type Rect struct{ W, H float64 }
+
+func (r Rect) Area() float64 { return r.W * r.H }
+
+func totalArea(shapes []Shape) float64 {   // 参数收接口
+	sum := 0.0
+	for _, s := range shapes {
+		sum += s.Area()
+	}
+	return sum
+}
+
+func main() {
+	shapes := []Shape{Circle{R: 2}, Rect{W: 3, H: 4}}
+	fmt.Println(totalArea(shapes))  // 24.56636
+}</code></pre>
+    <p><strong>自评清单：</strong>① 接口只有一个方法 <code>Area() float64</code>？② Circle / Rect 都<strong>没写任何 implements</strong>，靠方法集自动满足？③ 接收者用的值接收者（只读不改，不需要指针）？④ 切片的元素类型是接口 <code>Shape</code>，两种 struct 混着装？⑤ 遍历用 <code>for _, s := range</code>？——五条全中，你就把"没有继承的多态"跑通了。</p>
+  </details>
+
+  <h2 id="quiz">8 · 检索测验</h2>
+  <p>前 4 题考本课，后 2 题复习前课，凭记忆作答：</p>
+  <div id="quiz"></div>
+
+  <h2>9 · 闭卷回忆</h2>
+  <p>最后 60 秒，不看上文回答三个问题，再滚动到底部核对：</p>
+  <ol>
+    <li>Go 类型怎样才算实现了某个接口？想编译期确认怎么写？</li>
+    <li>指针接收者方法对"谁能满足接口"有什么影响？</li>
+    <li>struct 嵌入和 Java 继承的两条关键区别是什么？</li>
+  </ol>
+  <details>
+    <summary>核对答案</summary>
+    <ol>
+      <li>把接口要求的方法全部定义出来（隐式实现）；<code>var _ 接口 = 类型值{}</code> 编译期断言。</li>
+      <li>指针接收者的方法只在 <code>*T</code> 的方法集里，所以只有 <code>*T</code> 能满足接口；值类型装进接口直接编译错误。</li>
+      <li>没有 is-a / 向上转型（Dog 不是 Animal）；没有覆盖和动态多态（内层方法不会回调外层）。提升来的只是"语法糖"。</li>
+    </ol>
+  </details>
+
+  <h2>10 · 主推资源与下一步</h2>
+  <p><strong>今天的配套任务（约 20 分钟）：</strong>把 <a href="https://tour.go-zh.org/methods/1">A Tour of Go 中文版 · 方法与接口</a> 整章过完（12 小节，每页都能改代码跑），重点体会"接口越小巧越通用"；再看 <a href="https://gobyexample-cn.github.io/interfaces">Go by Example · Interfaces</a> 和 <a href="https://gobyexample-cn.github.io/struct-embedding">Struct Embedding</a> 两篇。</p>
+  <p>配套材料：<a href="../reference/go-interfaces-vs-java.html">速查表 · 接口与组合对照 Java</a>（可打印）。下节课：<strong>goroutine 与 channel</strong>——Go 最强的一面：轻量线程、<code>go</code> 关键字、用 channel 而不是共享内存来通信。Java 里让你头疼的并发设施，在 Go 里换了整套玩法。课里有疑问，随时在对话里问我。</p>
+
+  <nav class="lesson-nav">
+    <a href="0003-error-handling.html">← 第 3 课 · 错误处理</a>
+    <a href="../index.html">课程目录</a>
+    <a href="../reference/go-interfaces-vs-java.html">速查表 →</a>
+  </nav>
+</main>
+
+<script src="../assets/quiz.js"></script>
+<script>
+renderQuiz("#quiz", [
+  {
+    q: "一个 Go 类型要怎样才算实现了接口 <code>Notifier</code>？",
+    options: [
+      "写出 <code>implements Notifier</code> 声明",
+      "把 Notifier 要求的方法都定义出来即可，无需任何声明",
+      "继承一个实现了 Notifier 的基类",
+      "给类型加上注解 <code>@Notifier</code>"
+    ],
+    answer: 1,
+    explain: "Go 是<strong>隐式实现</strong>：编译器按方法集匹配，类型不需要知道接口的存在。想编译期确认可以用 <code>var _ Notifier = EmailNotifier{}</code>。（<a href='https://tour.go-zh.org/methods/9'>Tour · 接口</a>）"
+  },
+  {
+    q: "<code>type Logger interface{ Log(string) }</code>，且 <code>func (f *FileLogger) Log(s string)</code> 是指针接收者。谁能装进 <code>Logger</code>？",
+    options: [
+      "<code>FileLogger{}</code> 和 <code>&FileLogger{}</code> 都行",
+      "仅 <code>&FileLogger{}</code>",
+      "仅 <code>FileLogger{}</code>",
+      "都不行，还得 implements"
+    ],
+    answer: 1,
+    explain: "指针接收者的方法只属于 <code>*T</code> 的方法集，所以<strong>只有指针</strong>满足接口；值类型装箱后编译器拿不到可寻址副本。实战：方法集有指针接收者就全用指针接收者，装 <code>&T{}</code>。（本课第 4 节）"
+  },
+  {
+    q: "struct 嵌入（embedding）和 Java 继承的关键区别是？",
+    options: [
+      "完全等价，只是写法不同",
+      "嵌入没有 is-a 关系、没有覆盖与动态多态",
+      "嵌入不能复用父类字段",
+      "嵌入必须显式写 super 调用"
+    ],
+    answer: 1,
+    explain: "嵌入只做<strong>字段/方法提升</strong>（语法糖）：外层不是内层的子类型，<code>var a Animal = d</code> 编译错误；内层方法永远不会动态回调外层。要复用嵌入，要多态用接口。（本课第 5 节）"
+  },
+  {
+    q: "从 <code>any</code> 里取出 string、且类型不符时不想 panic，写法是？",
+    options: [
+      "<code>s := v.(string)</code>",
+      "<code>s := v.(string, ok)</code>",
+      "<code>s, ok := v.(string)</code>",
+      "<code>s := v.(String)</code>"
+    ],
+    answer: 2,
+    explain: "双返回的安全断言 <code>s, ok := v.(string)</code>：不符时 <code>ok == false</code> 而不是 panic。单返回值版 <code>v.(string)</code> 类型不符会 panic，仅在百分百确定时用；遍历多种可能用 <code>switch x := v.(type)</code>。（<a href='https://gobyexample-cn.github.io/type-switches'>Go by Example · Type Switches</a>）"
+  },
+  {
+    q: "让 <code>fmt.Println</code> 打印你的 struct 时输出自定义文字，需要实现？",
+    options: [
+      "<code>ToString() string</code> 方法",
+      "<code>String() string</code> 方法（fmt.Stringer）",
+      "<code>Print() string</code> 方法",
+      "没法自定义，只能打字段"
+    ],
+    answer: 1,
+    explain: "实现 <code>String() string</code>（接口 <code>fmt.Stringer</code>），fmt 家族打印时自动调用——和 Java 的 <code>toString()</code> 同构。（<a href='https://tour.go-zh.org/methods/17'>Tour · Stringer</a>）"
+  },
+  {
+    q: "【复习第 3 课】<code>catch (MyEx e)</code>——按类型取出错误并读取字段，对应 Go 的？",
+    options: [
+      "<code>errors.Is(err, MyEx{})</code>",
+      "<code>err.(MyEx)</code> 直接断言",
+      "<code>var e *MyEx; errors.As(err, &e)</code>",
+      "<code>err.TypeOf(MyEx)</code>"
+    ],
+    answer: 2,
+    explain: "间隔复习：按<strong>类型</strong>取错误用 <code>errors.As</code>（沿错误链找，拿到类型化变量读字段）；<code>errors.Is</code> 是按<strong>值</strong>比较哨兵错误。（第 3 课第 3 节）"
+  },
+  {
+    q: "【复习第 2 课】方法要修改接收者自身（比如 <code>c.n++</code>），接收者必须用？",
+    options: [
+      "值接收者 <code>(c Counter)</code>",
+      "指针接收者 <code>(c *Counter)</code>",
+      "static 修饰",
+      "返回新值就没这个问题"
+    ],
+    answer: 1,
+    explain: "间隔复习：值接收者拿到的是<strong>副本</strong>，改动不回原值；要修改就用指针接收者。本课刚学过它的另一半：指针接收者还决定了只有 <code>*T</code> 满足接口。（第 2 课第 6 节）"
+  }
+]);
+</script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Go for Java Engineers · 课程目录</title>
+<link rel="stylesheet" href="assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Go for Java Engineers · 目录</div>
+  <h1>Go for Java Engineers</h1>
+  <p class="meta">写给 Java 程序员的 Go 课程 · 每课 25–35 分钟 · 所有概念用 Java 对照</p>
+
+  <div class="note">
+    <strong>怎么用这套课：</strong>按顺序学，每课五步——① 读正文（概念全部用 Java 对照）→ ② 做<strong>翻译练习</strong>（先自己写，再对参考答案）→ ③ 合上资料做<strong>检索测验</strong>（即时打分，错题解析是记忆增强剂）→ ④ 60 秒<strong>闭卷回忆</strong> → ⑤ 打印当课<strong>速查表</strong>贴墙。每课测验都会捎带前面课程的复习题，间隔重复帮你记牢。有看不懂的地方，随时回到对话里问你的 agent 老师。
+  </div>
+
+  <h2>课程表</h2>
+  <table>
+    <tr><th>课</th><th>主题</th><th>学完你能</th></tr>
+    <tr>
+      <td><a href="lessons/0001-go-basics-for-java-developers.html">第 1 课 · 基础语法</a></td>
+      <td>变量 / 类型 / 函数 / 控制流 / 包与文件组织</td>
+      <td>把一段 Java 方法翻译成等价的 Go 代码</td>
+    </tr>
+    <tr>
+      <td><a href="lessons/0002-slices-maps-structs-methods.html">第 2 课 · 切片、map、struct 与方法</a></td>
+      <td>切片 / map / struct / 方法与接收者</td>
+      <td>用 slice / map / struct 组织数据，把一个 Java 类翻译成 Go</td>
+    </tr>
+    <tr>
+      <td><a href="lessons/0003-error-handling.html">第 3 课 · 错误处理</a></td>
+      <td>error / 错误链 / defer / panic</td>
+      <td>读懂并写出惯用的 <code>if err != nil</code></td>
+    </tr>
+    <tr>
+      <td><a href="lessons/0004-interfaces-and-composition.html">第 4 课 · 接口与组合</a></td>
+      <td>隐式实现 / 小接口 / 嵌入 / 类型断言</td>
+      <td>读懂标准库的接口设计，写出 Go 风格的抽象</td>
+    </tr>
+    <tr style="color:var(--muted)">
+      <td>第 5 课 · goroutine 与 channel（未发布）</td>
+      <td>并发：轻量线程 / channel / select</td>
+      <td>用 Go 的方式写并发</td>
+    </tr>
+    <tr style="color:var(--muted)">
+      <td>实战 · 小项目（未发布）</td>
+      <td>用标准库写一个完整程序</td>
+      <td>把前几课串成真东西</td>
+    </tr>
+  </table>
+
+  <h2>速查表（可打印贴墙）</h2>
+  <table>
+    <tr><th>表</th><th>覆盖</th></tr>
+    <tr><td><a href="reference/go-basics-vs-java.html">01 · Go 基础语法对照 Java</a></td><td>变量、类型、函数、控制流、包</td></tr>
+    <tr><td><a href="reference/go-composite-types-vs-java.html">02 · 复合类型对照 Java</a></td><td>切片、map、struct、方法</td></tr>
+    <tr><td><a href="reference/go-error-handling-vs-java.html">03 · 错误处理对照 Java</a></td><td>error、错误链、defer、panic</td></tr>
+    <tr><td><a href="reference/go-interfaces-vs-java.html">04 · 接口与组合对照 Java</a></td><td>隐式实现、嵌入、类型断言</td></tr>
+  </table>
+
+  <h2>环境准备</h2>
+  <p>第 1 课什么都不用装：练习都在 <a href="https://go.dev/play/">Go Playground</a>（浏览器里写、跑、分享）。想上本地环境，照 <a href="https://go-zh.org/doc/install">官方安装文档</a> 走，然后 <code>go version</code> 验证；第 4 课之后做实战项目前，本地 <code>go mod init</code> 一套模块就够了（≈ 一分钟版的 <code>pom.xml</code>）。</p>
+
+  <nav class="lesson-nav">
+    <span>课程目录</span>
+    <a href="lessons/0001-go-basics-for-java-developers.html">从第 1 课开始 →</a>
+  </nav>
+</main>
+</body>
+</html>

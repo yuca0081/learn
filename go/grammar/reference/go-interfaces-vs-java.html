@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速查表 · 接口与组合对照 Java</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <div class="kicker">Reference · 速查表 04</div>
+  <h1>接口与组合对照 Java</h1>
+  <p class="meta">第 4 课配套速查表 · 建议打印贴墙 · <a href="../lessons/0004-interfaces-and-composition.html">返回第 4 课</a></p>
+
+  <h2>七条铁律</h2>
+  <ol>
+    <li><strong>隐式实现</strong>：方法齐了就满足接口，没有 <code>implements</code>。</li>
+    <li>接口<strong>越小越好</strong>：标准库招牌接口只有 1 个方法。</li>
+    <li><strong>accept interfaces, return structs</strong>：参数收接口，返回给具体类型。</li>
+    <li>接口定义在<strong>消费者</strong>包里，不是实现者包里。</li>
+    <li>指针接收者的方法只有 <code>*T</code> 有 → <strong>只有 <code>*T</code> 满足接口</strong>。</li>
+    <li><strong>嵌入 ≠ 继承</strong>：无 is-a、无 override、无动态多态。</li>
+    <li>断言一律用 <code>v, ok := x.(T)</code> 双返回；分派用 type switch。</li>
+  </ol>
+
+  <h2>词汇对照</h2>
+  <table>
+    <tr><th>Java</th><th>Go</th><th>备注</th></tr>
+    <tr><td><code>interface Notifier { void send(String m); }</code></td><td><code>type Notifier interface { Send(m string) }</code></td><td>方法名大写才对外可见</td></tr>
+    <tr><td><code>class X implements Notifier</code></td><td>（无对应物）方法齐了自动满足</td><td>隐式实现</td></tr>
+    <tr><td><code>@Override</code></td><td>无</td><td>没有覆盖，自然没有注解</td></tr>
+    <tr><td><code>interface RW extends Reader, Writer</code></td><td><code>type RW interface { Reader; Writer }</code></td><td>接口嵌入接口，积木式组合</td></tr>
+    <tr><td><code>class Dog extends Animal</code></td><td><code>type Dog struct { Animal }</code></td><td><strong>嵌入 ≠ 继承</strong>：无 is-a、无多态</td></tr>
+    <tr><td><code>super.method()</code></td><td><code>d.Animal.method()</code></td><td>没有 super，显式写内层</td></tr>
+    <tr><td><code>x instanceof String</code></td><td>类型断言 <code>s, ok := x.(string)</code></td><td>双返回安全版，单返回会 panic</td></tr>
+    <tr><td><code>instanceof</code> 链 / 模式匹配</td><td><code>switch x := v.(type)</code></td><td>type switch</td></tr>
+    <tr><td><code>toString()</code></td><td><code>String() string</code>（<code>fmt.Stringer</code>）</td><td>fmt 打印时自动调用</td></tr>
+    <tr><td><code>Object</code></td><td><code>any</code>（<code>interface{}</code> 的别名）</td><td>空接口</td></tr>
+    <tr><td>接口默认方法（default method）</td><td>无对应物</td><td>组合小接口来替代</td></tr>
+  </table>
+
+  <h2>基础 idiom</h2>
+<pre><code>type Shape interface {
+	Area() float64
+}
+
+type Circle struct{ R float64 }
+func (c Circle) Area() float64 { return 3.14159 * c.R * c.R }
+// 没写 implements，方法齐了自动满足 Shape
+
+func totalArea(shapes []Shape) float64 {   // 参数收接口
+	sum := 0.0
+	for _, s := range shapes {
+		sum += s.Area()
+	}
+	return sum
+}
+
+var _ Shape = Circle{}               // 编译期确认实现了接口（一行单测）</code></pre>
+
+  <h2>方法集规则</h2>
+<pre><code>func (c Circle) Area() float64  → Circle 和 *Circle 都满足接口
+func (c *Circle) Scale(f float64) → 只有 *Circle 满足接口
+
+var _ Shape = &amp;Circle{}   // ✅
+var _ Shape = Circle{}    // ❌ 编译错误（若有指针接收者方法）
+
+// 铁律：方法集里出现一个指针接收者，就全用指针接收者，装 &amp;T{}</code></pre>
+
+  <h2>类型断言 / type switch / Stringer</h2>
+<pre><code>s := v.(string)       // 不符则 panic（≈ 强转）
+s, ok := v.(string)   // 不符则 ok=false（安全）
+
+switch x := v.(type) {          // ≈ instanceof 链 / 模式匹配
+case string:
+	fmt.Println("字符串", len(x))
+case int:
+	fmt.Println("整数", x)
+}
+
+func (p Player) String() string {   // ≈ toString()
+	return fmt.Sprintf("%s(Lv.%d)", p.Name, p.Lv)
+}                                    // fmt.Println 自动调用</code></pre>
+
+  <h2>nil 陷阱</h2>
+  <div class="warn">
+    接口值 = （动态类型, 动态值）一对；<strong>两者都为 nil 才 <code>== nil</code></strong>。把具体类型的 nil 指针装进接口后 <code>err == nil</code> 为 false。返回 error：要么真 <code>nil</code>，要么有效错误，别返回 <code>(*MyErr)(nil)</code>。
+  </div>
+
+  <h2>相关链接</h2>
+  <ul>
+    <li><a href="../lessons/0004-interfaces-and-composition.html">第 4 课 · 接口与组合</a></li>
+    <li><a href="https://tour.go-zh.org/methods/1">A Tour of Go · 方法与接口</a></li>
+    <li><a href="https://gopl-zh.github.io/ch7/ch7.html">《Go 语言圣经》第 7 章 · 接口</a></li>
+    <li><a href="https://go-proverbs.github.io/">Go Proverbs · "The bigger the interface, the weaker the abstraction"</a></li>
+    <li><a href="https://gobyexample-cn.github.io/interfaces">Go by Example（中文）· Interfaces / Struct Embedding / Type Switches / Stringer</a></li>
+  </ul>
+
+  <p class="cite">本表覆盖第 4 课。goroutine、channel 见第 5 课速查表（未发布）。</p>
+
+  <nav class="lesson-nav">
+    <a href="../lessons/0004-interfaces-and-composition.html">← 第 4 课</a>
+    <a href="../index.html">课程目录</a>
+    <a href="go-error-handling-vs-java.html">速查表 03</a>
+  </nav>
+</main>
+</body>
+</html>
